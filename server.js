@@ -124,6 +124,15 @@ app.get('/admin/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'pub
 // ── Public pages ──────────────────────────────────────────────────────────────
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+// Redirect removed public pages (login / signup / welcome) → index
+app.get('/login',   (req, res) => res.redirect(301, '/'));
+app.get('/signup',  (req, res) => res.redirect(301, '/'));
+app.get('/welcome', (req, res) => res.redirect(301, '/'));
+app.get('/login.html',   (req, res) => res.redirect(301, '/'));
+app.get('/signup.html',  (req, res) => res.redirect(301, '/'));
+app.get('/welcome.html', (req, res) => res.redirect(301, '/'));
+
+// Any other .html page that doesn't exist → 404 JSON (not index redirect)
 app.get('/:page.html', (req, res) => {
   const filePath = path.join(__dirname, 'public', `${req.params.page}.html`);
   res.sendFile(filePath, err => {

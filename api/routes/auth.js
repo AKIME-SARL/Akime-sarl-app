@@ -11,6 +11,18 @@ const auditLog = require('../middleware/auditLog');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
+const {
+  isValidObjectId,
+  isValidEmail,
+  isValidStringLength,
+  isValidInteger,
+  isValidRole,
+  trimString,
+  sanitizePlainText,
+  STRING_LIMITS,
+  VALID_AUDIT_RESOURCES,
+  VALID_AUDIT_ACTIONS
+} = require('../utils/validation');
 
 // Multer storage for avatars
 const avatarStorage = multer.diskStorage({
@@ -21,7 +33,9 @@ const avatarStorage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'avatar-' + req.user.id + '-' + uniqueSuffix + path.extname(file.originalname));
+    const ext = path.extname(file.originalname);
+    const safeExt = /^\.[a-zA-Z0-9]{2,5}$/.test(ext) ? ext : '.bin';
+    cb(null, 'avatar-' + req.user.id + '-' + uniqueSuffix + safeExt);
   }
 });
 
@@ -78,9 +92,11 @@ const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za
  */
 router.post('/register', generalAuthLimiter, async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    let { name, email, password } = req.body;
 
-    // Validation
+    name = sanitizePlainText(trimString(name));
+    email = trimString(email);
+
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -88,7 +104,36 @@ router.post('/register', generalAuthLimiter, async (req, res) => {
       });
     }
 
-    // Check if user already exists
+    if (!isValidStringLength(name, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)) {
+      return res.status(400).json({
+        success: false,
+        message: `Nom invalide (${STRING_LIMITS.NAME_MIN}-${STRING_LIMITS.NAME_MAX} caractères)`
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Adresse email invalide'
+      });
+    }
+
+    if (typeof password !== 'string' || !isValidStringLength(password, STRING_LIMITS.PASSWORD_MIN, STRING_LIMITS.PASSWORD_MAX)) {
+      return res.status(400).json({
+        success: false,
+        message: `Mot de passe invalide (${STRING_LIMITS.PASSWORD_MIN}-${STRING_LIMITS.PASSWORD_MAX} caractères)`
+      });
+    }
+
+    if (!strongPasswordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le mot de passe doit contenir au moins une lettre majuscule, une lettre minuscule, un chiffre et un caractère spécial'
+      });
+    }
+
+    email = email.toLowerCase();
+
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({
@@ -97,7 +142,6 @@ router.post('/register', generalAuthLimiter, async (req, res) => {
       });
     }
 
-    // Create new customer user
     const user = await User.create({
       name,
       email,
@@ -105,10 +149,8 @@ router.post('/register', generalAuthLimiter, async (req, res) => {
       role: 'customer'
     });
 
-    // Generate tokens
     const { accessToken, refreshToken, expiresIn } = jwtUtils.generateTokenPair(user);
 
-    // Store refresh token
     const refreshTokenData = {
       token: refreshToken,
       expiresAt: new Date(Date.now() + jwtUtils.getExpiryTime('7d')),
@@ -157,9 +199,10 @@ router.post('/register', generalAuthLimiter, async (req, res) => {
  */
 router.post('/login', authLimiter, async (req, res) => {
   try {
-    const { email, password, twoFactorCode } = req.body;
+    let { email, password, twoFactorCode } = req.body;
 
-    // Validation
+    email = trimString(email);
+
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -167,7 +210,31 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    // Find user with password and 2FA secret
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Adresse email invalide'
+      });
+    }
+
+    if (typeof password !== 'string' || password.length < 1 || password.length > STRING_LIMITS.PASSWORD_MAX) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mot de passe invalide'
+      });
+    }
+
+    email = email.toLowerCase();
+
+    if (twoFactorCode !== undefined && twoFactorCode !== null && twoFactorCode !== '') {
+      if (!/^\d{6,8}$/.test(String(twoFactorCode).trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Code 2FA invalide (6-8 chiffres attendus)'
+        });
+      }
+    }
+
     const user = await User.findOne({ email, isActive: true }).select('+password +twoFactorSecret');
     if (!user) {
       return res.status(401).json({
@@ -176,7 +243,6 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    // Check if account is locked
     if (user.isLocked) {
       return res.status(423).json({
         success: false,
@@ -184,7 +250,6 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       await user.incLoginAttempts();
@@ -194,7 +259,6 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    // If 2FA is enabled, verify the code
     if (user.twoFactorEnabled && user.twoFactorSecret) {
       if (!twoFactorCode) {
         return res.status(400).json({
@@ -207,7 +271,7 @@ router.post('/login', authLimiter, async (req, res) => {
       const verified = speakeasy.totp.verify({
         secret: user.twoFactorSecret,
         encoding: 'base32',
-        token: twoFactorCode
+        token: String(twoFactorCode).trim()
       });
 
       if (!verified) {
@@ -218,13 +282,10 @@ router.post('/login', authLimiter, async (req, res) => {
       }
     }
 
-    // Reset login attempts on successful login
     await user.resetLoginAttempts();
 
-    // Generate tokens
     const { accessToken, refreshToken, expiresIn } = jwtUtils.generateTokenPair(user);
 
-    // Store refresh token
     const refreshTokenData = {
       token: refreshToken,
       expiresAt: new Date(Date.now() + jwtUtils.getExpiryTime('7d')),
@@ -270,7 +331,11 @@ router.post('/login', authLimiter, async (req, res) => {
  */
 router.post('/google', generalAuthLimiter, async (req, res) => {
   try {
-    const { credential } = req.body;
+    let { credential } = req.body;
+
+    if (credential !== undefined && credential !== null) {
+      credential = trimString(String(credential));
+    }
 
     if (!credential) {
       return res.status(400).json({
@@ -279,7 +344,13 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
       });
     }
 
-    // Verify Google token
+    if (credential.length < 20 || credential.length > 10000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google credential invalide'
+      });
+    }
+
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID
@@ -291,23 +362,24 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
     const name = payload['name'] || payload['given_name'] + ' ' + payload['family_name'];
     const picture = payload['picture'] || null;
 
-    // Check if user already exists
     let user = await User.findOne({ googleId });
 
     if (!user) {
-      // Check if user exists with this email
       user = await User.findOne({ email });
 
       if (user) {
-        // User exists, link Google account
         user.googleId = googleId;
         user.googleProfile = payload;
         if (picture && !user.avatar) user.avatar = picture;
       } else {
-        // Create new user
+        const cleanName = isValidStringLength(name, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)
+          ? name
+          : 'Google User';
+        const cleanEmail = email && isValidEmail(email) ? email.toLowerCase() : googleId + '@invalid.google';
+
         user = await User.create({
-          name,
-          email,
+          name: cleanName,
+          email: cleanEmail,
           googleId,
           googleProfile: payload,
           avatar: picture,
@@ -315,7 +387,6 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
         });
       }
     } else {
-      // Update profile if needed
       if (picture && !user.avatar) user.avatar = picture;
       user.googleProfile = payload;
     }
@@ -323,10 +394,8 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    // Generate tokens
     const { accessToken, refreshToken, expiresIn } = jwtUtils.generateTokenPair(user);
 
-    // Store refresh token
     const refreshTokenData = {
       token: refreshToken,
       expiresAt: new Date(Date.now() + jwtUtils.getExpiryTime('7d')),
@@ -371,16 +440,26 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
  */
 router.post('/refresh', generalAuthLimiter, async (req, res) => {
   try {
-    const { refreshToken } = req.body;
+    let { refreshToken } = req.body;
 
-    if (!refreshToken) {
+    if (refreshToken !== undefined && refreshToken !== null) {
+      refreshToken = trimString(String(refreshToken));
+    }
+
+    if (!refreshToken || typeof refreshToken !== 'string') {
       return res.status(400).json({
         success: false,
         message: 'Refresh token is required'
       });
     }
 
-    // Verify refresh token
+    if (refreshToken.length < 20 || refreshToken.length > 2000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token invalide'
+      });
+    }
+
     let decoded;
     try {
       decoded = jwtUtils.verifyRefreshToken(refreshToken);
@@ -440,12 +519,18 @@ router.post('/refresh', generalAuthLimiter, async (req, res) => {
  */
 router.post('/logout', authenticated(), async (req, res) => {
   try {
-    const { refreshToken } = req.body;
+    let { refreshToken } = req.body;
     const userId = req.user.id;
+
+    if (refreshToken !== undefined && refreshToken !== null) {
+      refreshToken = trimString(String(refreshToken));
+      if (refreshToken.length > 2000) {
+        refreshToken = null;
+      }
+    }
 
     const user = await User.findById(userId);
     if (user && refreshToken) {
-      // Remove the specific refresh token
       user.refreshTokens = user.refreshTokens.filter(
         rt => rt.token !== refreshToken
       );
@@ -645,7 +730,7 @@ router.delete('/me/avatar', authenticated(), auditLog('UPDATE', 'USER'), async (
 router.put('/me', authenticated(), auditLog('UPDATE', 'USER'), async (req, res) => {
   try {
     const userId = req.user.id;
-    const { name, email, avatar, currentPassword, newPassword } = req.body;
+    let { name, email, avatar, currentPassword, newPassword } = req.body;
 
     const user = await User.findById(userId);
     if (!user) {
@@ -655,10 +740,28 @@ router.put('/me', authenticated(), auditLog('UPDATE', 'USER'), async (req, res) 
       });
     }
 
-    // Update basic info
-    if (name) user.name = name;
-    if (email) {
-      // Check if email is already taken
+    const update = {};
+
+    if (name !== undefined) {
+      name = sanitizePlainText(trimString(name));
+      if (!isValidStringLength(name, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)) {
+        return res.status(400).json({
+          success: false,
+          message: `Nom invalide (${STRING_LIMITS.NAME_MIN}-${STRING_LIMITS.NAME_MAX} caractères)`
+        });
+      }
+      update.name = name;
+    }
+
+    if (email !== undefined) {
+      email = trimString(email);
+      if (!isValidEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Adresse email invalide'
+        });
+      }
+      email = email.toLowerCase();
       const existingUser = await User.findOne({ email, _id: { $ne: userId } });
       if (existingUser) {
         return res.status(400).json({
@@ -666,12 +769,36 @@ router.put('/me', authenticated(), auditLog('UPDATE', 'USER'), async (req, res) 
           message: 'Email already in use'
         });
       }
-      user.email = email;
+      update.email = email;
     }
-    if (avatar) user.avatar = avatar;
 
-    // Update password if provided
-    if (currentPassword && newPassword) {
+    if (avatar !== undefined) {
+      if (avatar === null || avatar === '') {
+        update.avatar = null;
+      } else if (typeof avatar === 'string' && isValidStringLength(avatar, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        update.avatar = avatar;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'URL avatar invalide'
+        });
+      }
+    }
+
+    if ((currentPassword !== undefined && currentPassword !== null && currentPassword !== '') ||
+        (newPassword !== undefined && newPassword !== null && newPassword !== '')) {
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({
+          success: false,
+          message: 'Les mots de passe actuel et nouveau sont requis pour modifier le mot de passe'
+        });
+      }
+      if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'Mots de passe invalides'
+        });
+      }
       const isPasswordValid = await user.comparePassword(currentPassword);
       if (!isPasswordValid) {
         return res.status(400).json({
@@ -679,15 +806,22 @@ router.put('/me', authenticated(), auditLog('UPDATE', 'USER'), async (req, res) 
           message: 'Current password is incorrect'
         });
       }
-      if (newPassword.length < 8) {
+      if (!isValidStringLength(newPassword, STRING_LIMITS.PASSWORD_MIN, STRING_LIMITS.PASSWORD_MAX)) {
         return res.status(400).json({
           success: false,
-          message: 'New password must be at least 8 characters'
+          message: `Nouveau mot de passe invalide (${STRING_LIMITS.PASSWORD_MIN}-${STRING_LIMITS.PASSWORD_MAX} caractères)`
         });
       }
-      user.password = newPassword;
+      if (!strongPasswordRegex.test(newPassword)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Le nouveau mot de passe doit contenir au moins une lettre majuscule, une lettre minuscule, un chiffre et un caractère spécial'
+        });
+      }
+      update.password = newPassword;
     }
 
+    Object.assign(user, update);
     await user.save();
 
     res.json({
@@ -743,9 +877,11 @@ router.get('/users', adminOnly(), async (req, res) => {
  */
 router.post('/users', adminOnly(), auditLog('CREATE', 'USER'), async (req, res) => {
   try {
-    const { name, email, password, role = 'editor' } = req.body;
+    let { name, email, password, role = 'editor' } = req.body;
 
-    // Validation
+    name = sanitizePlainText(trimString(name));
+    email = trimString(email);
+
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -753,7 +889,43 @@ router.post('/users', adminOnly(), auditLog('CREATE', 'USER'), async (req, res) 
       });
     }
 
-    // Check allowed admin emails if setting admin role
+    if (!isValidStringLength(name, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)) {
+      return res.status(400).json({
+        success: false,
+        message: `Nom invalide (${STRING_LIMITS.NAME_MIN}-${STRING_LIMITS.NAME_MAX} caractères)`
+      });
+    }
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Adresse email invalide'
+      });
+    }
+
+    email = email.toLowerCase();
+
+    if (typeof password !== 'string' || !isValidStringLength(password, STRING_LIMITS.PASSWORD_MIN, STRING_LIMITS.PASSWORD_MAX)) {
+      return res.status(400).json({
+        success: false,
+        message: `Mot de passe invalide (${STRING_LIMITS.PASSWORD_MIN}-${STRING_LIMITS.PASSWORD_MAX} caractères)`
+      });
+    }
+
+    if (!strongPasswordRegex.test(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le mot de passe doit contenir au moins une lettre majuscule, une lettre minuscule, un chiffre et un caractère spécial'
+      });
+    }
+
+    if (!isValidRole(role)) {
+      return res.status(400).json({
+        success: false,
+        message: `Rôle invalide. Valeurs autorisées: ${VALID_AUDIT_RESOURCES ? '' : ''}admin, editor, viewer, customer`
+      });
+    }
+
     if (role === 'admin') {
       const allowedAdminEmails = (process.env.ALLOWED_ADMIN_EMAILS || '')
         .split(',')
@@ -768,7 +940,6 @@ router.post('/users', adminOnly(), auditLog('CREATE', 'USER'), async (req, res) 
       }
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({
@@ -777,7 +948,6 @@ router.post('/users', adminOnly(), auditLog('CREATE', 'USER'), async (req, res) 
       });
     }
 
-    // Create new user
     const user = await User.create({
       name,
       email,
@@ -815,17 +985,18 @@ router.post('/users', adminOnly(), auditLog('CREATE', 'USER'), async (req, res) 
   }
 });
 
-/**
- * @route   PUT /api/auth/users/:id
- * @desc    Update a user (admin only)
- * @access  Private (Admin)
- */
 router.put('/users/:id', adminOnly(), auditLog('UPDATE', 'USER'), async (req, res) => {
   try {
     const userId = req.params.id;
-    const { name, email, role, isActive, password } = req.body;
+    let { name, email, role, isActive, password } = req.body;
 
-    // Prevent admin from updating themselves
+    if (!isValidObjectId(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Identifiant utilisateur invalide'
+      });
+    }
+
     if (userId === req.user.id) {
       return res.status(400).json({
         success: false,
@@ -841,14 +1012,46 @@ router.put('/users/:id', adminOnly(), auditLog('UPDATE', 'USER'), async (req, re
       });
     }
 
-    // Check allowed admin emails if setting admin role
-    if (role === 'admin') {
+    const update = {};
+
+    if (name !== undefined) {
+      name = sanitizePlainText(trimString(name));
+      if (!isValidStringLength(name, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)) {
+        return res.status(400).json({
+          success: false,
+          message: `Nom invalide (${STRING_LIMITS.NAME_MIN}-${STRING_LIMITS.NAME_MAX} caractères)`
+        });
+      }
+      update.name = name;
+    }
+
+    if (email !== undefined) {
+      email = trimString(email);
+      if (!isValidEmail(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Adresse email invalide'
+        });
+      }
+      email = email.toLowerCase();
+      const existingUser = await User.findOne({ email, _id: { $ne: userId } });
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email already in use'
+        });
+      }
+      update.email = email;
+    }
+
+    const targetRole = role !== undefined ? role : user.role;
+    const targetEmail = update.email ? update.email.toLowerCase() : user.email.toLowerCase();
+    if (targetRole === 'admin') {
       const allowedAdminEmails = (process.env.ALLOWED_ADMIN_EMAILS || '')
         .split(',')
         .map(e => e.trim().toLowerCase())
         .filter(e => e);
       
-      const targetEmail = email ? email.toLowerCase() : user.email.toLowerCase();
       if (!allowedAdminEmails.includes(targetEmail)) {
         return res.status(400).json({
           success: false,
@@ -857,22 +1060,43 @@ router.put('/users/:id', adminOnly(), auditLog('UPDATE', 'USER'), async (req, re
       }
     }
 
-    // Update fields
-    if (name) user.name = name;
-    if (email) {
-      const existingUser = await User.findOne({ email, _id: { $ne: userId } });
-      if (existingUser) {
+    if (role !== undefined) {
+      if (!isValidRole(role)) {
         return res.status(400).json({
           success: false,
-          message: 'Email already in use'
+          message: 'Rôle invalide'
         });
       }
-      user.email = email;
+      update.role = role;
     }
-    if (role && ['admin', 'editor', 'viewer', 'customer'].includes(role)) user.role = role;
-    if (typeof isActive === 'boolean') user.isActive = isActive;
-    if (password) user.password = password;
 
+    if (isActive !== undefined) {
+      if (typeof isActive !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'Valeur isActive invalide (booléen attendu)'
+        });
+      }
+      update.isActive = isActive;
+    }
+
+    if (password !== undefined && password !== null && password !== '') {
+      if (typeof password !== 'string' || !isValidStringLength(password, STRING_LIMITS.PASSWORD_MIN, STRING_LIMITS.PASSWORD_MAX)) {
+        return res.status(400).json({
+          success: false,
+          message: `Mot de passe invalide (${STRING_LIMITS.PASSWORD_MIN}-${STRING_LIMITS.PASSWORD_MAX} caractères)`
+        });
+      }
+      if (!strongPasswordRegex.test(password)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Le mot de passe doit contenir au moins une lettre majuscule, une lettre minuscule, un chiffre et un caractère spécial'
+        });
+      }
+      update.password = password;
+    }
+
+    Object.assign(user, update);
     await user.save();
 
     res.json({
@@ -905,16 +1129,17 @@ router.put('/users/:id', adminOnly(), auditLog('UPDATE', 'USER'), async (req, re
   }
 });
 
-/**
- * @route   DELETE /api/auth/users/:id
- * @desc    Delete a user (admin only)
- * @access  Private (Admin)
- */
 router.delete('/users/:id', adminOnly(), auditLog('DELETE', 'USER'), async (req, res) => {
   try {
     const userId = req.params.id;
 
-    // Prevent admin from deleting themselves
+    if (!isValidObjectId(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Identifiant utilisateur invalide'
+      });
+    }
+
     if (userId === req.user.id) {
       return res.status(400).json({
         success: false,
@@ -944,24 +1169,46 @@ router.delete('/users/:id', adminOnly(), auditLog('DELETE', 'USER'), async (req,
   }
 });
 
-/**
- * @route   GET /api/auth/audit-logs
- * @desc    Get audit logs (admin only)
- * @access  Private (Admin)
- */
 router.get('/audit-logs', adminOnly(), async (req, res) => {
   try {
-    const { limit = 50, page = 1, resource, action } = req.query;
+    let { limit = 50, page = 1, resource, action } = req.query;
+
+    if (!isValidInteger(limit, 1, 500)) limit = 50;
+    else limit = parseInt(limit);
+
+    if (!isValidInteger(page, 1, 1000000)) page = 1;
+    else page = parseInt(page);
+
     const skip = (page - 1) * limit;
 
     const query = {};
-    if (resource) query.resource = resource;
-    if (action) query.action = action;
+    if (resource) {
+      const r = String(resource).toUpperCase();
+      if (VALID_AUDIT_RESOURCES.includes(r)) {
+        query.resource = r;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: `Ressource invalide. Valeurs autorisées: ${VALID_AUDIT_RESOURCES.join(', ')}`
+        });
+      }
+    }
+    if (action) {
+      const a = String(action).toUpperCase();
+      if (VALID_AUDIT_ACTIONS.includes(a)) {
+        query.action = a;
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: `Action invalide. Valeurs autorisées: ${VALID_AUDIT_ACTIONS.join(', ')}`
+        });
+      }
+    }
 
     const logs = await AuditLog.find(query)
       .populate('user', 'name email')
       .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
+      .limit(limit)
       .skip(skip);
 
     const total = await AuditLog.countDocuments(query);
@@ -972,8 +1219,8 @@ router.get('/audit-logs', adminOnly(), async (req, res) => {
         logs,
         pagination: {
           total,
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page,
+          limit,
           totalPages: Math.ceil(total / limit)
         }
       }
@@ -1041,7 +1288,7 @@ router.post('/2fa/setup', authenticated(), async (req, res) => {
  */
 router.post('/2fa/verify', authenticated(), async (req, res) => {
   try {
-    const { token } = req.body;
+    let { token } = req.body;
     const user = await User.findById(req.user.id).select('+twoFactorSecret');
 
     if (!user) {
@@ -1058,7 +1305,17 @@ router.post('/2fa/verify', authenticated(), async (req, res) => {
       });
     }
 
-    // Verify token
+    if (token !== undefined && token !== null) {
+      token = String(token).trim();
+    }
+
+    if (!token || !/^\d{6,8}$/.test(token)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code de vérification invalide (6-8 chiffres attendus)'
+      });
+    }
+
     const verified = speakeasy.totp.verify({
       secret: user.twoFactorSecret,
       encoding: 'base32',
@@ -1072,7 +1329,6 @@ router.post('/2fa/verify', authenticated(), async (req, res) => {
       });
     }
 
-    // Enable 2FA
     user.twoFactorEnabled = true;
     await user.save();
 
@@ -1089,11 +1345,6 @@ router.post('/2fa/verify', authenticated(), async (req, res) => {
   }
 });
 
-/**
- * @route   POST /api/auth/2fa/disable
- * @desc    Disable 2FA for a user
- * @access  Private
- */
 router.post('/2fa/disable', authenticated(), sensitiveOperation, async (req, res) => {
   try {
     const { password } = req.body;
@@ -1106,7 +1357,13 @@ router.post('/2fa/disable', authenticated(), sensitiveOperation, async (req, res
       });
     }
 
-    // Verify password
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Mot de passe requis'
+      });
+    }
+
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -1115,7 +1372,6 @@ router.post('/2fa/disable', authenticated(), sensitiveOperation, async (req, res
       });
     }
 
-    // Disable 2FA
     user.twoFactorEnabled = false;
     user.twoFactorSecret = null;
     await user.save();
@@ -1205,7 +1461,13 @@ router.post('/gdpr/delete', authenticated(), sensitiveOperation, async (req, res
       });
     }
 
-    // Verify password
+    if (!password || typeof password !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Mot de passe requis pour confirmer la suppression'
+      });
+    }
+
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -1214,13 +1476,9 @@ router.post('/gdpr/delete', authenticated(), sensitiveOperation, async (req, res
       });
     }
 
-    // Update deletion request timestamp
     user.dataDeletionRequestedAt = new Date();
-    // You could also mark the account for deletion or delete it immediately
-    // user.isActive = false; // Uncomment to disable account
     await user.save();
 
-    // In a real app, you'd send a confirmation email
     res.json({
       success: true,
       message: 'Account deletion request received. Your account will be deleted within 30 days.'

@@ -19,11 +19,7 @@ logs/
 # ── Backups ───────────────────────────────────────────────────
 backups/
 
-# ── V6.2 scope: only index + admin in this release ────────────
-# These pages exist but are excluded from this GitHub push
-public/welcome.html
-public/login.html
-public/signup.html
+
 
 # ── OS / Editor ───────────────────────────────────────────────
 .DS_Store

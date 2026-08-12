@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#0a1f44">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -28,7 +28,7 @@
                 fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + d.data.accessToken } })
                   .then(r => r.json()).then(me => {
                     if (!me.success || (me.data.user.role !== 'admin' && me.data.user.role !== 'editor'))
-                      window.location.replace('/login.html');
+                      window.location.replace('/admin/login');
                   });
               } else { localStorage.clear(); window.location.replace('/admin/login'); }
             }).catch(() => { localStorage.clear(); window.location.replace('/admin/login'); });
@@ -36,7 +36,7 @@
             fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } })
               .then(r => r.json()).then(d => {
                 if (!d.success || (d.data.user.role !== 'admin' && d.data.user.role !== 'editor'))
-                  window.location.replace('/login.html');
+                  window.location.replace('/admin/login');
                 else localStorage.setItem('akime_user', JSON.stringify(d.data.user));
               }).catch(() => {});
           }
@@ -220,9 +220,10 @@
 
     /* Badge on nav item */
     .nav-badge {
-      margin-left: auto; background: var(--gold); color: var(--navy);
-      border-radius: 10px; font-size: .65rem; font-weight: 800;
+      margin-left: auto; background: #dc3545; color: #fff;
+      border-radius: 999px; font-size: .65rem; font-weight: 800;
       padding: 2px 7px; flex-shrink: 0; display: none;
+      min-width: 22px; text-align: center; line-height: 1.3;
     }
     .sidebar.collapsed .nav-badge { display: none !important; }
 
@@ -428,6 +429,7 @@
     /* ── Modal overlay ────────────────────────────────────────── */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(10,31,68,.55);
+      -webkit-backdrop-filter: blur(4px);
       backdrop-filter: blur(4px); z-index: 500;
       display: none; align-items: center; justify-content: center;
     }
@@ -653,8 +655,8 @@
         width: 280px !important;
         height: 100vh;
         height: 100svh;
-        transform: translateX(-100%);
         -webkit-transform: translateX(-100%);
+        transform: translateX(-100%);
         transition: transform .3s cubic-bezier(.4,0,.2,1);
         z-index: 1001;
         box-shadow: var(--shadow-lg);
@@ -662,8 +664,8 @@
         padding-bottom: env(safe-area-inset-bottom);
       }
       .sidebar.drawer-open {
-        transform: translateX(0);
         -webkit-transform: translateX(0);
+        transform: translateX(0);
       }
       /* Always show labels when drawer is visible (767px) */
       .sidebar .sidebar-logo-text,
@@ -687,8 +689,8 @@
       .sidebar-backdrop {
         position: fixed; inset: 0;
         background: rgba(10,31,68,.55);
-        backdrop-filter: blur(4px);
         -webkit-backdrop-filter: blur(4px);
+        backdrop-filter: blur(4px);
         z-index: 1000;
         opacity: 0; pointer-events: none;
         transition: opacity .25s ease;
@@ -1001,8 +1003,8 @@
         </div>
 
         <div class="sidebar-shortcuts">
-            <a href="/welcome.html" class="shortcut-btn gold"><i class="fas fa-th-large"></i> Mon espace</a>
-            <a href="/"            class="shortcut-btn ghost"><i class="fas fa-globe"></i> Site</a>
+            <a href="/" class="shortcut-btn gold"><i class="fas fa-home"></i> Site</a>
+            <a href="https://wa.me/237698012093" class="shortcut-btn ghost"><i class="fab fa-whatsapp"></i> WhatsApp</a>
         </div>
 
         <div class="nav-menu">

@@ -9,15 +9,21 @@ const Equipment = require('../models/Equipment');
 const Project = require('../models/Project');
 const Company = require('../models/Company');
 const { adminOrEditor } = require('../middleware/auth');
+const {
+  isValidObjectId,
+  isValidStringLength,
+  isValidInteger,
+  isValidEquipmentCategory,
+  isSafeFilename,
+  trimString,
+  sanitizePlainText,
+  STRING_LIMITS
+} = require('../utils/validation');
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:4001";
 
-// ===============================================
-// ------------- Multer Config -------------------
-// ===============================================
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    // FIXED: Save all files in the general directory
     const uploadPath = path.join(__dirname, '../../uploads/general');
     try {
       await fsp.mkdir(uploadPath, { recursive: true });
@@ -28,7 +34,9 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    const ext = path.extname(file.originalname);
+    const safeExt = /^\.[a-zA-Z0-9]{2,5}$/.test(ext) ? ext : '.bin';
+    cb(null, file.fieldname + '-' + uniqueSuffix + safeExt);
   }
 });
 
@@ -43,15 +51,66 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage,
-  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 100 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 100 * 1024 * 1024 },
   fileFilter
 });
+
+function resolveSafeGeneralImage(unsafeUrl) {
+  if (!unsafeUrl || typeof unsafeUrl !== 'string') return null;
+  const base = '/uploads/general/';
+  if (!unsafeUrl.startsWith(base)) return null;
+  const name = unsafeUrl.slice(base.length);
+  if (!isSafeFilename(name)) return null;
+  const resolved = path.resolve(path.join(__dirname, '../../uploads/general'), name);
+  const root = path.resolve(path.join(__dirname, '../../uploads/general'));
+  if (!resolved.startsWith(root)) return null;
+  return resolved;
+}
+
+function cleanSubPages(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(sp => sp && typeof sp === 'object')
+    .map(sp => {
+      const title = sanitizePlainText(trimString(sp.title));
+      const description = sanitizePlainText(trimString(sp.description || ''));
+      if (!isValidStringLength(title, 1, STRING_LIMITS.SHORT_TEXT_MAX)) return null;
+      if (!isValidStringLength(description, 0, STRING_LIMITS.MEDIUM_TEXT_MAX)) return null;
+      return { title, description };
+    })
+    .filter(Boolean)
+    .slice(0, 50);
+}
+
+function cleanFeatures(raw) {
+  if (Array.isArray(raw)) {
+    return raw
+      .map(f => sanitizePlainText(trimString(f)))
+      .filter(f => isValidStringLength(f, 1, STRING_LIMITS.SHORT_TEXT_MAX))
+      .slice(0, 200);
+  }
+  if (typeof raw === 'string') {
+    return raw
+      .split('\n')
+      .map(f => sanitizePlainText(trimString(f)))
+      .filter(f => isValidStringLength(f, 1, STRING_LIMITS.SHORT_TEXT_MAX))
+      .slice(0, 200);
+  }
+  return [];
+}
+
+function cleanGallery(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(url => typeof url === 'string' && url.startsWith('/uploads/general/'))
+    .filter(url => resolveSafeGeneralImage(url))
+    .slice(0, 50);
+}
 
 // ===============================================
 // ----------------- Projects CRUD ---------------
 // ===============================================
 
-// ✅ GET all projects - ADDED THIS MISSING ROUTE
 router.get('/projects', async (req, res) => {
   try {
     const items = await Project.find().sort({ createdAt: -1 });
@@ -62,10 +121,13 @@ router.get('/projects', async (req, res) => {
   }
 });
 
-// ✅ GET single project by ID - ADDED THIS MISSING ROUTE
 router.get('/projects/:id', async (req, res) => {
   try {
-    const item = await Project.findById(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+    }
+    const item = await Project.findById(id);
     if (!item) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
@@ -76,7 +138,6 @@ router.get('/projects/:id', async (req, res) => {
   }
 });
 
-// ✅ CREATE project (main image + gallery)
 router.post(
   '/projects',
   adminOrEditor(),
@@ -86,20 +147,75 @@ router.post(
   ]),
   async (req, res) => {
     try {
-      const data = req.body;
-      if (!data.category) data.category = 'other';
+      const raw = req.body || {};
+      const clean = {};
 
-      // Image principale - FIXED PATH
+      let title = sanitizePlainText(trimString(raw.title));
+      if (!isValidStringLength(title, 2, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        return res.status(400).json({
+          success: false,
+          message: `Titre invalide (${STRING_LIMITS.NAME_MIN}-${STRING_LIMITS.SHORT_TEXT_MAX} caractères)`
+        });
+      }
+      clean.title = title;
+
+      clean.category = raw.category && isValidStringLength(trimString(raw.category), 0, STRING_LIMITS.SHORT_TEXT_MAX)
+        ? sanitizePlainText(trimString(raw.category)) : 'other';
+
+      if (raw.location !== undefined) {
+        const loc = sanitizePlainText(trimString(raw.location));
+        if (!isValidStringLength(loc, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
+          return res.status(400).json({ success: false, message: 'Localisation trop longue' });
+        }
+        clean.location = loc;
+      }
+
+      if (raw.date !== undefined && raw.date !== null && raw.date !== '') {
+        const d = new Date(raw.date);
+        if (isNaN(d.getTime())) {
+          return res.status(400).json({ success: false, message: 'Date invalide' });
+        }
+        clean.date = d;
+      }
+
+      if (raw.client !== undefined) {
+        const client = sanitizePlainText(trimString(raw.client));
+        if (!isValidStringLength(client, 0, STRING_LIMITS.NAME_MAX)) {
+          return res.status(400).json({ success: false, message: 'Nom client trop long' });
+        }
+        clean.client = client;
+      }
+
+      if (raw.description !== undefined) {
+        const desc = sanitizePlainText(trimString(raw.description));
+        if (!isValidStringLength(desc, 0, STRING_LIMITS.LONG_TEXT_MAX)) {
+          return res.status(400).json({ success: false, message: 'Description trop longue' });
+        }
+        clean.description = desc;
+      }
+
       if (req.files && req.files['image']) {
-        data.imageUrl = `/uploads/general/${req.files['image'][0].filename}`;
+        clean.imageUrl = `/uploads/general/${req.files['image'][0].filename}`;
+      } else if (raw.imageUrl && resolveSafeGeneralImage(raw.imageUrl)) {
+        clean.imageUrl = raw.imageUrl;
       }
 
-      // Galerie - FIXED PATH
+      let gallery = [];
       if (req.files && req.files['gallery']) {
-        data.gallery = req.files['gallery'].map(f => `/uploads/general/${f.filename}`);
+        gallery = gallery.concat(req.files['gallery'].map(f => `/uploads/general/${f.filename}`));
       }
+      if (raw.gallery) {
+        let parsed;
+        if (typeof raw.gallery === 'string') {
+          try { parsed = JSON.parse(raw.gallery); } catch { parsed = []; }
+        } else {
+          parsed = raw.gallery;
+        }
+        gallery = gallery.concat(cleanGallery(parsed));
+      }
+      if (gallery.length > 0) clean.gallery = [...new Set(gallery)].slice(0, 50);
 
-      const item = await Project.create(data);
+      const item = await Project.create(clean);
       res.json({ success: true, data: item });
     } catch (err) {
       console.error("❌ Create project error:", err);
@@ -108,7 +224,6 @@ router.post(
   }
 );
 
-// ✅ UPDATE project (replace main image + optional gallery)
 router.put(
   '/projects/:id',
   adminOrEditor(),
@@ -118,19 +233,107 @@ router.put(
   ]),
   async (req, res) => {
     try {
-      const data = req.body;
+      const { id } = req.params;
+      if (!isValidObjectId(id)) {
+        return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+      }
 
-      // Image principale - FIXED PATH
+      const existing = await Project.findById(id);
+      if (!existing) {
+        return res.status(404).json({ success: false, message: 'Project not found' });
+      }
+
+      const raw = req.body || {};
+      const update = {};
+
+      if (raw.title !== undefined) {
+        const title = sanitizePlainText(trimString(raw.title));
+        if (!isValidStringLength(title, 2, STRING_LIMITS.SHORT_TEXT_MAX)) {
+          return res.status(400).json({ success: false, message: 'Titre invalide' });
+        }
+        update.title = title;
+      }
+
+      if (raw.category !== undefined) {
+        const cat = sanitizePlainText(trimString(raw.category));
+        if (!isValidStringLength(cat, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
+          return res.status(400).json({ success: false, message: 'Catégorie invalide' });
+        }
+        update.category = cat || 'other';
+      }
+
+      if (raw.location !== undefined) {
+        const loc = sanitizePlainText(trimString(raw.location));
+        if (!isValidStringLength(loc, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
+          return res.status(400).json({ success: false, message: 'Localisation trop longue' });
+        }
+        update.location = loc;
+      }
+
+      if (raw.date !== undefined) {
+        if (raw.date === null || raw.date === '') {
+          update.date = null;
+        } else {
+          const d = new Date(raw.date);
+          if (isNaN(d.getTime())) {
+            return res.status(400).json({ success: false, message: 'Date invalide' });
+          }
+          update.date = d;
+        }
+      }
+
+      if (raw.client !== undefined) {
+        const client = sanitizePlainText(trimString(raw.client));
+        if (!isValidStringLength(client, 0, STRING_LIMITS.NAME_MAX)) {
+          return res.status(400).json({ success: false, message: 'Nom client trop long' });
+        }
+        update.client = client;
+      }
+
+      if (raw.description !== undefined) {
+        const desc = sanitizePlainText(trimString(raw.description));
+        if (!isValidStringLength(desc, 0, STRING_LIMITS.LONG_TEXT_MAX)) {
+          return res.status(400).json({ success: false, message: 'Description trop longue' });
+        }
+        update.description = desc;
+      }
+
       if (req.files && req.files['image']) {
-        data.imageUrl = `/uploads/general/${req.files['image'][0].filename}`;
+        update.imageUrl = `/uploads/general/${req.files['image'][0].filename}`;
+      } else if (raw.imageUrl !== undefined) {
+        if (raw.imageUrl && resolveSafeGeneralImage(raw.imageUrl)) {
+          update.imageUrl = raw.imageUrl;
+        } else if (raw.imageUrl === '' || raw.imageUrl === null) {
+          update.imageUrl = '';
+        }
       }
 
-      // Galerie - FIXED PATH
       if (req.files && req.files['gallery']) {
-        data.gallery = req.files['gallery'].map(f => `/uploads/general/${f.filename}`);
+        let gallery = [];
+        gallery = gallery.concat(req.files['gallery'].map(f => `/uploads/general/${f.filename}`));
+        if (raw.gallery) {
+          let parsed;
+          if (typeof raw.gallery === 'string') {
+            try { parsed = JSON.parse(raw.gallery); } catch { parsed = []; }
+          } else {
+            parsed = raw.gallery;
+          }
+          gallery = gallery.concat(cleanGallery(parsed));
+        } else if (Array.isArray(existing.gallery)) {
+          gallery = gallery.concat(existing.gallery);
+        }
+        update.gallery = [...new Set(gallery)].slice(0, 50);
+      } else if (raw.gallery !== undefined) {
+        let parsed;
+        if (typeof raw.gallery === 'string') {
+          try { parsed = JSON.parse(raw.gallery); } catch { parsed = []; }
+        } else {
+          parsed = raw.gallery;
+        }
+        update.gallery = cleanGallery(parsed);
       }
 
-      const item = await Project.findByIdAndUpdate(req.params.id, data, { new: true });
+      const item = await Project.findByIdAndUpdate(id, update, { new: true });
       if (!item) {
         return res.status(404).json({ success: false, message: 'Project not found' });
       }
@@ -143,33 +346,27 @@ router.put(
   }
 );
 
-// ✅ DELETE project (delete images too)
 router.delete('/projects/:id', adminOrEditor(), async (req, res) => {
   try {
-    const item = await Project.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+    }
+    const item = await Project.findByIdAndDelete(id);
     if (!item) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
-    // Supprimer l'image principale si elle existe - FIXED PATH
-    if (item.imageUrl) {
-      const imgPath = path.join(__dirname, '../../uploads/general', path.basename(item.imageUrl));
-      if (fs.existsSync(imgPath)) {
-        fs.unlinkSync(imgPath);
-        console.log("🗑 Deleted main image:", imgPath);
+    const generalRoot = path.resolve(path.join(__dirname, '../../uploads/general'));
+    const tryUnlink = (url) => {
+      const resolved = resolveSafeGeneralImage(url);
+      if (resolved && resolved.startsWith(generalRoot)) {
+        try { fs.unlinkSync(resolved); console.log("🗑 Deleted file:", resolved); } catch {}
       }
-    }
+    };
 
-    // Supprimer les images de la galerie si elles existent - FIXED PATH
-    if (item.gallery && Array.isArray(item.gallery)) {
-      item.gallery.forEach(g => {
-        const imgPath = path.join(__dirname, '../../uploads/general', path.basename(g));
-        if (fs.existsSync(imgPath)) {
-          fs.unlinkSync(imgPath);
-          console.log("🗑 Deleted gallery image:", imgPath);
-        }
-      });
-    }
+    if (item.imageUrl) tryUnlink(item.imageUrl);
+    if (Array.isArray(item.gallery)) item.gallery.forEach(tryUnlink);
 
     res.json({ success: true, message: 'Project deleted' });
   } catch (err) {
@@ -192,7 +389,11 @@ router.get('/services', async (req, res) => {
 
 router.get('/services/:id', async (req, res) => {
   try {
-    const item = await Service.findById(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+    }
+    const item = await Service.findById(id);
     if (!item) return res.status(404).json({ success: false, message: 'Service not found' });
     res.json({ success: true, data: item });
   } catch (err) {
@@ -202,21 +403,75 @@ router.get('/services/:id', async (req, res) => {
 
 router.post('/services', adminOrEditor(), upload.single('image'), async (req, res) => {
   try {
-    console.log('POST /api/content/services - req.body:', req.body);
-    console.log('POST /api/content/services - req.file:', req.file);
-    const data = { ...req.body };
-    if (req.file) data.imageUrl = `/uploads/general/${req.file.filename}`;
-    // subPages comes as JSON string from FormData
-    if (data.subPages && typeof data.subPages === 'string') {
-      try { data.subPages = JSON.parse(data.subPages); } catch { data.subPages = []; }
+    const raw = req.body || {};
+    const clean = {};
+
+    let title = sanitizePlainText(trimString(raw.title));
+    if (!isValidStringLength(title, 2, STRING_LIMITS.SHORT_TEXT_MAX)) {
+      return res.status(400).json({ success: false, message: 'Titre invalide (2-255 caractères)' });
     }
-    console.log('POST /api/content/services - data.subPages after parse:', data.subPages);
-    if (data.features && typeof data.features === 'string') {
-      data.features = data.features.split('\n').map(f => f.trim()).filter(Boolean);
+    clean.title = title;
+
+    let name = sanitizePlainText(trimString(raw.name));
+    if (!name || !isValidStringLength(name, 2, STRING_LIMITS.SHORT_TEXT_MAX)) {
+      name = title;
     }
-    if (!data.name) data.name = data.title;
-    const item = await Service.create(data);
-    console.log('POST /api/content/services - created service:', item);
+    clean.name = name;
+
+    const category = sanitizePlainText(trimString(raw.category));
+    if (!isValidStringLength(category, 1, STRING_LIMITS.SHORT_TEXT_MAX)) {
+      return res.status(400).json({ success: false, message: 'Catégorie invalide (slug requis)' });
+    }
+    clean.category = category;
+
+    const description = sanitizePlainText(trimString(raw.description));
+    if (!isValidStringLength(description, 5, STRING_LIMITS.LONG_TEXT_MAX)) {
+      return res.status(400).json({ success: false, message: 'Description invalide (5-10000 caractères)' });
+    }
+    clean.description = description;
+
+    if (req.file) {
+      clean.imageUrl = `/uploads/general/${req.file.filename}`;
+    } else if (raw.imageUrl && resolveSafeGeneralImage(raw.imageUrl)) {
+      clean.imageUrl = raw.imageUrl;
+    }
+
+    if (raw.icon !== undefined) {
+      const icon = sanitizePlainText(trimString(raw.icon));
+      if (isValidStringLength(icon, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        clean.icon = icon || 'fa-cogs';
+      }
+    }
+
+    if (raw.subPages !== undefined) {
+      let parsed;
+      if (typeof raw.subPages === 'string') {
+        try { parsed = JSON.parse(raw.subPages); } catch { parsed = []; }
+      } else {
+        parsed = raw.subPages;
+      }
+      clean.subPages = cleanSubPages(parsed);
+    }
+
+    if (raw.price !== undefined) {
+      const price = sanitizePlainText(trimString(raw.price));
+      if (isValidStringLength(price, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        clean.price = price || 'Sur devis';
+      }
+    }
+
+    if (raw.features !== undefined) {
+      clean.features = cleanFeatures(raw.features);
+    }
+
+    if (raw.order !== undefined) {
+      const order = Number(raw.order);
+      if (isValidInteger(order, 0, 100000)) {
+        clean.order = order;
+      }
+    }
+
+    const item = await Service.create(clean);
     res.json({ success: true, data: item });
   } catch (err) {
     console.error('POST /api/content/services - error:', err);
@@ -226,20 +481,92 @@ router.post('/services', adminOrEditor(), upload.single('image'), async (req, re
 
 router.put('/services/:id', adminOrEditor(), upload.single('image'), async (req, res) => {
   try {
-    console.log('PUT /api/content/services/:id - req.body:', req.body);
-    console.log('PUT /api/content/services/:id - req.file:', req.file);
-    const data = { ...req.body };
-    if (req.file) data.imageUrl = `/uploads/general/${req.file.filename}`;
-    if (data.subPages && typeof data.subPages === 'string') {
-      try { data.subPages = JSON.parse(data.subPages); } catch { data.subPages = []; }
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
     }
-    console.log('PUT /api/content/services/:id - data.subPages after parse:', data.subPages);
-    if (data.features && typeof data.features === 'string') {
-      data.features = data.features.split('\n').map(f => f.trim()).filter(Boolean);
+
+    const raw = req.body || {};
+    const update = {};
+
+    if (raw.title !== undefined) {
+      const title = sanitizePlainText(trimString(raw.title));
+      if (!isValidStringLength(title, 2, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        return res.status(400).json({ success: false, message: 'Titre invalide' });
+      }
+      update.title = title;
     }
-    if (!data.name) data.name = data.title;
-    const item = await Service.findByIdAndUpdate(req.params.id, data, { new: true });
-    console.log('PUT /api/content/services/:id - updated service:', item);
+
+    if (raw.name !== undefined) {
+      const name = sanitizePlainText(trimString(raw.name));
+      if (!isValidStringLength(name, 2, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        return res.status(400).json({ success: false, message: 'Nom invalide' });
+      }
+      update.name = name;
+    }
+
+    if (raw.category !== undefined) {
+      const category = sanitizePlainText(trimString(raw.category));
+      if (!isValidStringLength(category, 1, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        return res.status(400).json({ success: false, message: 'Catégorie invalide' });
+      }
+      update.category = category;
+    }
+
+    if (raw.description !== undefined) {
+      const description = sanitizePlainText(trimString(raw.description));
+      if (!isValidStringLength(description, 5, STRING_LIMITS.LONG_TEXT_MAX)) {
+        return res.status(400).json({ success: false, message: 'Description invalide' });
+      }
+      update.description = description;
+    }
+
+    if (req.file) {
+      update.imageUrl = `/uploads/general/${req.file.filename}`;
+    } else if (raw.imageUrl !== undefined) {
+      if (raw.imageUrl && resolveSafeGeneralImage(raw.imageUrl)) {
+        update.imageUrl = raw.imageUrl;
+      } else if (raw.imageUrl === '' || raw.imageUrl === null) {
+        update.imageUrl = '';
+      }
+    }
+
+    if (raw.icon !== undefined) {
+      const icon = sanitizePlainText(trimString(raw.icon));
+      if (isValidStringLength(icon, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        update.icon = icon;
+      }
+    }
+
+    if (raw.subPages !== undefined) {
+      let parsed;
+      if (typeof raw.subPages === 'string') {
+        try { parsed = JSON.parse(raw.subPages); } catch { parsed = []; }
+      } else {
+        parsed = raw.subPages;
+      }
+      update.subPages = cleanSubPages(parsed);
+    }
+
+    if (raw.price !== undefined) {
+      const price = sanitizePlainText(trimString(raw.price));
+      if (isValidStringLength(price, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
+        update.price = price;
+      }
+    }
+
+    if (raw.features !== undefined) {
+      update.features = cleanFeatures(raw.features);
+    }
+
+    if (raw.order !== undefined) {
+      const order = Number(raw.order);
+      if (isValidInteger(order, 0, 100000)) {
+        update.order = order;
+      }
+    }
+
+    const item = await Service.findByIdAndUpdate(id, update, { new: true });
     if (!item) return res.status(404).json({ success: false, message: 'Service not found' });
     res.json({ success: true, data: item });
   } catch (err) {
@@ -250,8 +577,14 @@ router.put('/services/:id', adminOrEditor(), upload.single('image'), async (req,
 
 router.delete('/services/:id', adminOrEditor(), async (req, res) => {
   try {
-    const item = await Service.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+    }
+    const item = await Service.findByIdAndDelete(id);
     if (!item) return res.status(404).json({ success: false, message: 'Service not found' });
+    const resolved = resolveSafeGeneralImage(item.imageUrl);
+    if (resolved) { try { fs.unlinkSync(resolved); } catch {} }
     res.json({ success: true, message: 'Service deleted' });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -262,16 +595,18 @@ router.delete('/services/:id', adminOrEditor(), async (req, res) => {
 // ----------------- Equipment CRUD --------------
 // ===============================================
 
-// ✅ GET all equipment
 router.get('/equipment', async (req, res) => {
   const items = await Equipment.find().sort({ createdAt: -1 });
   res.json({ success: true, data: items });
 });
 
-// ✅ GET single equipment
 router.get('/equipment/:id', async (req, res) => {
   try {
-    const item = await Equipment.findById(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+    }
+    const item = await Equipment.findById(id);
     if (!item) return res.status(404).json({ success: false, message: 'Equipment not found' });
     res.json({ success: true, data: item });
   } catch (err) {
@@ -279,31 +614,56 @@ router.get('/equipment/:id', async (req, res) => {
   }
 });
 
-// ✅ CREATE equipment
 router.post('/equipment', adminOrEditor(), upload.single('image'), async (req, res) => {
   try {
-    const { name, description, category, brand, model, year } = req.body;
+    const raw = req.body || {};
 
-    if (!name || !description || !category) {
+    const name = sanitizePlainText(trimString(raw.name));
+    if (!isValidStringLength(name, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)) {
       return res.status(400).json({
         success: false,
-        message: 'Name, description and category are required'
+        message: `Nom invalide (${STRING_LIMITS.NAME_MIN}-${STRING_LIMITS.NAME_MAX} caractères)`
       });
     }
 
-    // FIXED PATH - use general instead of equipment
-    const imageUrl = req.file ? `/uploads/general/${req.file.filename}` : null;
+    const description = sanitizePlainText(trimString(raw.description));
+    if (!isValidStringLength(description, 5, STRING_LIMITS.MEDIUM_TEXT_MAX)) {
+      return res.status(400).json({
+        success: false,
+        message: `Description invalide (5-${STRING_LIMITS.MEDIUM_TEXT_MAX} caractères)`
+      });
+    }
 
-    const item = await Equipment.create({
-      name,
-      description,
-      category,
-      brand,
-      model,
-      year,
-      imageUrl
-    });
+    const category = sanitizePlainText(trimString(raw.category));
+    if (!isValidEquipmentCategory(category)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Catégorie invalide. Valeurs autorisées: excavation, levage, transport, compactage, outillage, divers'
+      });
+    }
 
+    const data = { name, description, category };
+
+    if (raw.brand !== undefined) {
+      const brand = sanitizePlainText(trimString(raw.brand));
+      if (isValidStringLength(brand, 0, STRING_LIMITS.SHORT_TEXT_MAX)) data.brand = brand;
+    }
+    if (raw.model !== undefined) {
+      const model = sanitizePlainText(trimString(raw.model));
+      if (isValidStringLength(model, 0, STRING_LIMITS.SHORT_TEXT_MAX)) data.model = model;
+    }
+    if (raw.year !== undefined && raw.year !== null && raw.year !== '') {
+      const year = Number(raw.year);
+      if (!isValidInteger(year, 1900, new Date().getFullYear() + 1)) {
+        return res.status(400).json({ success: false, message: 'Année invalide' });
+      }
+      data.year = year;
+    }
+
+    data.imageUrl = req.file ? `/uploads/general/${req.file.filename}`
+                : (raw.imageUrl && resolveSafeGeneralImage(raw.imageUrl) ? raw.imageUrl : null);
+
+    const item = await Equipment.create(data);
     res.json({ success: true, data: item });
   } catch (error) {
     console.error("❌ Save equipment error:", error);
@@ -311,30 +671,79 @@ router.post('/equipment', adminOrEditor(), upload.single('image'), async (req, r
   }
 });
 
-// ✅ UPDATE equipment (with image replacement)
 router.put('/equipment/:id', adminOrEditor(), upload.single('image'), async (req, res) => {
   try {
-    const equipment = await Equipment.findById(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+    }
+    const equipment = await Equipment.findById(id);
     if (!equipment) {
       return res.status(404).json({ success: false, message: 'Équipement introuvable' });
     }
 
-    const { name, description, category, brand, model, year } = req.body;
-    const updateData = { name, description, category, brand, model, year };
+    const raw = req.body || {};
+    const updateData = {};
 
-    // If new file is uploaded → delete old image - FIXED PATH
-    if (req.file) {
-      if (equipment.imageUrl) {
-        const oldImagePath = path.join(__dirname, '../../', equipment.imageUrl);
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-          console.log('🗑 Old image deleted:', oldImagePath);
-        }
+    if (raw.name !== undefined) {
+      const name = sanitizePlainText(trimString(raw.name));
+      if (!isValidStringLength(name, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)) {
+        return res.status(400).json({ success: false, message: 'Nom invalide' });
       }
-      updateData.imageUrl = `/uploads/general/${req.file.filename}`;
+      updateData.name = name;
     }
 
-    const updatedEquipment = await Equipment.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    if (raw.description !== undefined) {
+      const description = sanitizePlainText(trimString(raw.description));
+      if (!isValidStringLength(description, 5, STRING_LIMITS.MEDIUM_TEXT_MAX)) {
+        return res.status(400).json({ success: false, message: 'Description invalide' });
+      }
+      updateData.description = description;
+    }
+
+    if (raw.category !== undefined) {
+      const category = sanitizePlainText(trimString(raw.category));
+      if (!isValidEquipmentCategory(category)) {
+        return res.status(400).json({ success: false, message: 'Catégorie invalide' });
+      }
+      updateData.category = category;
+    }
+
+    if (raw.brand !== undefined) {
+      const brand = sanitizePlainText(trimString(raw.brand));
+      if (isValidStringLength(brand, 0, STRING_LIMITS.SHORT_TEXT_MAX)) updateData.brand = brand;
+    }
+    if (raw.model !== undefined) {
+      const model = sanitizePlainText(trimString(raw.model));
+      if (isValidStringLength(model, 0, STRING_LIMITS.SHORT_TEXT_MAX)) updateData.model = model;
+    }
+    if (raw.year !== undefined) {
+      if (raw.year === null || raw.year === '') {
+        updateData.year = undefined;
+      } else {
+        const year = Number(raw.year);
+        if (!isValidInteger(year, 1900, new Date().getFullYear() + 1)) {
+          return res.status(400).json({ success: false, message: 'Année invalide' });
+        }
+        updateData.year = year;
+      }
+    }
+
+    if (req.file) {
+      const oldResolved = resolveSafeGeneralImage(equipment.imageUrl);
+      if (oldResolved) {
+        try { fs.unlinkSync(oldResolved); console.log('🗑 Old image deleted:', oldResolved); } catch {}
+      }
+      updateData.imageUrl = `/uploads/general/${req.file.filename}`;
+    } else if (raw.imageUrl !== undefined) {
+      if (raw.imageUrl && resolveSafeGeneralImage(raw.imageUrl)) {
+        updateData.imageUrl = raw.imageUrl;
+      } else if (raw.imageUrl === '' || raw.imageUrl === null) {
+        updateData.imageUrl = null;
+      }
+    }
+
+    const updatedEquipment = await Equipment.findByIdAndUpdate(id, updateData, { new: true });
     res.json({ success: true, data: updatedEquipment });
   } catch (err) {
     console.error("❌ Update error:", err);
@@ -342,23 +751,18 @@ router.put('/equipment/:id', adminOrEditor(), upload.single('image'), async (req
   }
 });
 
-// ✅ DELETE equipment (with image delete)
 router.delete('/equipment/:id', adminOrEditor(), async (req, res) => {
   try {
-    const equipment = await Equipment.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+    }
+    const equipment = await Equipment.findByIdAndDelete(id);
     if (!equipment) {
       return res.status(404).json({ success: false, message: 'Equipment not found' });
     }
-
-    // Delete image if exists - FIXED PATH
-    if (equipment.imageUrl) {
-      const oldImagePath = path.join(__dirname, '../../', equipment.imageUrl);
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
-        console.log('🗑 Image deleted with equipment:', oldImagePath);
-      }
-    }
-
+    const resolved = resolveSafeGeneralImage(equipment.imageUrl);
+    if (resolved) { try { fs.unlinkSync(resolved); console.log('🗑 Image deleted with equipment:', resolved); } catch {} }
     res.json({ success: true, message: 'Equipment deleted' });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -366,19 +770,67 @@ router.delete('/equipment/:id', adminOrEditor(), async (req, res) => {
 });
 
 // ---- Company (single doc) ----
+const COMPANY_FIELDS = ['name', 'slogan', 'address', 'phone', 'email', 'rccm', 'niu', 'about', 'values'];
+
 router.get('/company', async (req,res)=>{
   const doc = await Company.findOne() || await Company.create({});
   res.json(doc);
 });
+
 router.put('/company', adminOrEditor(), async (req,res)=>{
   try {
+    const raw = req.body || {};
     const current = await Company.findOne();
+
+    const update = {};
+
+    if (raw.name !== undefined) {
+      const v = sanitizePlainText(trimString(raw.name));
+      if (isValidStringLength(v, 0, STRING_LIMITS.NAME_MAX)) update.name = v;
+    }
+    if (raw.slogan !== undefined) {
+      const v = sanitizePlainText(trimString(raw.slogan));
+      if (isValidStringLength(v, 0, STRING_LIMITS.SHORT_TEXT_MAX)) update.slogan = v;
+    }
+    if (raw.address !== undefined) {
+      const v = sanitizePlainText(trimString(raw.address));
+      if (isValidStringLength(v, 0, STRING_LIMITS.SHORT_TEXT_MAX)) update.address = v;
+    }
+    if (raw.phone !== undefined) {
+      const v = sanitizePlainText(trimString(raw.phone));
+      if (isValidStringLength(v, 0, STRING_LIMITS.PHONE_MAX)) update.phone = v;
+    }
+    if (raw.email !== undefined) {
+      const v = trimString(raw.email);
+      if (!v) update.email = '';
+      else if (v.length <= STRING_LIMITS.EMAIL_MAX) update.email = v.toLowerCase();
+    }
+    if (raw.rccm !== undefined) {
+      const v = sanitizePlainText(trimString(raw.rccm));
+      if (isValidStringLength(v, 0, STRING_LIMITS.SHORT_TEXT_MAX)) update.rccm = v;
+    }
+    if (raw.niu !== undefined) {
+      const v = sanitizePlainText(trimString(raw.niu));
+      if (isValidStringLength(v, 0, STRING_LIMITS.SHORT_TEXT_MAX)) update.niu = v;
+    }
+    if (raw.about !== undefined) {
+      const v = sanitizePlainText(trimString(raw.about));
+      if (isValidStringLength(v, 0, STRING_LIMITS.LONG_TEXT_MAX)) update.about = v;
+    }
+    if (raw.values !== undefined) {
+      const values = Array.isArray(raw.values) ? raw.values : [];
+      update.values = values
+        .map(v => sanitizePlainText(trimString(v)))
+        .filter(v => isValidStringLength(v, 1, STRING_LIMITS.SHORT_TEXT_MAX))
+        .slice(0, 50);
+    }
+
     if (current) {
-      Object.assign(current, req.body);
+      Object.assign(current, update);
       await current.save();
       res.json({ success: true, data: current });
     } else {
-      const created = await Company.create(req.body);
+      const created = await Company.create(update);
       res.json({ success: true, data: created });
     }
   } catch (error) {
@@ -393,7 +845,7 @@ router.post('/upload', adminOrEditor(), upload.single('file'), async (req, res) 
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
 
-    const fileUrl = `/uploads/${req.file.fieldname}/${req.file.filename}`;
+    const fileUrl = `/uploads/general/${req.file.filename}`;
 
     res.json({
       success: true,
@@ -409,9 +861,5 @@ router.post('/upload', adminOrEditor(), upload.single('file'), async (req, res) 
     res.status(400).json({ success: false, message: error.message });
   }
 });
-
-
-
-
 
 module.exports = router;

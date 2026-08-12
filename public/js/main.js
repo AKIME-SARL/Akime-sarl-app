@@ -33,13 +33,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!navActions) return;
 
     if (isAuthenticated()) {
-      // User is logged in: show welcome link and logout button
+      // User is logged in: show admin link (if admin/editor) and logout button
       const user = getCurrentUser();
+      const isStaff = user?.role === 'admin' || user?.role === 'editor';
       navActions.innerHTML = `
-        <a href="welcome.html" class="btn-connexion" style="padding: 9px 14px;">
-          <i class="fas fa-user-circle"></i> ${user?.name || 'MON COMPTE'}
+        <a href="tel:+237698012093" class="nav-phone">
+          <i class="fas fa-phone-alt"></i>
         </a>
-        <button id="navLogoutBtn" class="btn-signup" style="padding: 9px 14px; cursor: pointer;">
+        ${isStaff ? `<a href="admin/dashboard.html" class="btn-signup"><i class="fas fa-chart-line"></i> ADMIN</a>` : ``}
+        <button id="navLogoutBtn" class="btn-connexion" style="cursor: pointer;">
           <i class="fas fa-sign-out-alt"></i> DÉCONNECTER
         </button>
         <button class="menu-toggle" id="menuToggle" aria-label="Menu">

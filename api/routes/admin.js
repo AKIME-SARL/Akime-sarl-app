@@ -4,9 +4,13 @@ const { adminOnly } = require('../middleware/auth');
 const User = require('../models/User');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execPromise = promisify(exec);
+const {
+  isValidObjectId,
+  isSafeFilename,
+  isSafeBackupName,
+  isValidUploadDirectory,
+  STRING_LIMITS
+} = require('../utils/validation');
 
 // ── User Management Endpoints ─────────────────────────────────────────────────
 router.get('/users', adminOnly(), async (req, res) => {
@@ -29,6 +33,14 @@ router.get('/users', adminOnly(), async (req, res) => {
 router.delete('/users/:userId', adminOnly(), async (req, res) => {
   try {
     const { userId } = req.params;
+
+    if (!isValidObjectId(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Identifiant utilisateur invalide'
+      });
+    }
+
     const user = await User.findById(userId);
     
     if (!user) {
@@ -56,8 +68,25 @@ router.delete('/users/:userId', adminOnly(), async (req, res) => {
 // ── Backup Endpoints ──────────────────────────────────────────────────────────
 router.post('/backup', adminOnly(), async (req, res) => {
   try {
-    const { stdout, stderr } = await execPromise('node scripts/backup.js', {
+    const { spawn } = require('child_process');
+    const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'backup.js');
+
+    const backup = spawn('node', [scriptPath], {
       cwd: path.join(__dirname, '..', '..')
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    backup.stdout.on('data', data => { stdout += data.toString(); });
+    backup.stderr.on('data', data => { stderr += data.toString(); });
+
+    await new Promise((resolve, reject) => {
+      backup.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error(`Backup exited with code ${code}: ${stderr || stdout}`));
+      });
+      backup.on('error', reject);
     });
     
     if (stderr) console.error('Backup stderr:', stderr);
@@ -88,11 +117,11 @@ router.get('/backups', adminOnly(), async (req, res) => {
     const entries = fs.readdirSync(backupsRoot, { withFileTypes: true });
     const backups = entries
       .filter(entry => entry.isDirectory() && entry.name.startsWith('backup-'))
+      .filter(entry => isSafeBackupName(entry.name))
       .map(entry => {
         const fullPath = path.join(backupsRoot, entry.name);
         const stat = fs.statSync(fullPath);
         
-        // Read manifest if it exists
         let manifest = null;
         const manifestPath = path.join(fullPath, 'manifest.json');
         if (fs.existsSync(manifestPath)) {
@@ -129,10 +158,50 @@ router.get('/backups', adminOnly(), async (req, res) => {
 router.post('/restore/:backupName', adminOnly(), async (req, res) => {
   try {
     const { backupName } = req.params;
-    const { stdout, stderr } = await execPromise(
-      `node scripts/restore.js "${backupName}" --confirm`,
-      { cwd: path.join(__dirname, '..', '..') }
-    );
+    const backupsRoot = path.join(__dirname, '..', '..', 'backups');
+
+    if (!isSafeBackupName(backupName)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nom de sauvegarde invalide'
+      });
+    }
+
+    const backupPath = path.resolve(backupsRoot, backupName);
+    if (!backupPath.startsWith(path.resolve(backupsRoot))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Chemin de sauvegarde invalide'
+      });
+    }
+
+    if (!fs.existsSync(backupPath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sauvegarde introuvable'
+      });
+    }
+
+    const { spawn } = require('child_process');
+    const scriptPath = path.join(__dirname, '..', '..', 'scripts', 'restore.js');
+
+    const restore = spawn('node', [scriptPath, backupName, '--confirm'], {
+      cwd: path.join(__dirname, '..', '..')
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    restore.stdout.on('data', data => { stdout += data.toString(); });
+    restore.stderr.on('data', data => { stderr += data.toString(); });
+
+    await new Promise((resolve, reject) => {
+      restore.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error(`Restore exited with code ${code}: ${stderr || stdout}`));
+      });
+      restore.on('error', reject);
+    });
     
     if (stderr) console.error('Restore stderr:', stderr);
     
@@ -154,7 +223,22 @@ router.post('/restore/:backupName', adminOnly(), async (req, res) => {
 router.delete('/backups/:backupName', adminOnly(), async (req, res) => {
   try {
     const { backupName } = req.params;
-    const backupPath = path.join(__dirname, '..', '..', 'backups', backupName);
+    const backupsRoot = path.join(__dirname, '..', '..', 'backups');
+
+    if (!isSafeBackupName(backupName)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nom de sauvegarde invalide'
+      });
+    }
+
+    const backupPath = path.resolve(backupsRoot, backupName);
+    if (!backupPath.startsWith(path.resolve(backupsRoot))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Chemin de sauvegarde invalide'
+      });
+    }
     
     if (!fs.existsSync(backupPath)) {
       return res.status(404).json({
@@ -236,16 +320,29 @@ router.get('/files', adminOnly(), async (req, res) => {
 router.delete('/files/:directory/:filename', adminOnly(), async (req, res) => {
   try {
     const { directory, filename } = req.params;
-    const validDirectories = ['projects', 'equipment', 'services', 'general'];
+    const uploadsRoot = path.join(__dirname, '..', '..', 'uploads');
     
-    if (!validDirectories.includes(directory)) {
+    if (!isValidUploadDirectory(directory)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid directory'
       });
     }
+
+    if (!isSafeFilename(filename)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nom de fichier invalide'
+      });
+    }
     
-    const filePath = path.join(__dirname, '..', '..', 'uploads', directory, filename);
+    const filePath = path.resolve(uploadsRoot, directory, filename);
+    if (!filePath.startsWith(path.resolve(uploadsRoot))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Chemin de fichier invalide'
+      });
+    }
     
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({

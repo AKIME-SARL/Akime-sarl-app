@@ -55,6 +55,7 @@ html {
   scroll-behavior: smooth;
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
   -ms-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
@@ -66,11 +67,13 @@ body {
   color: var(--foreground);
   background: var(--background);
   overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
+}
+@supports (-webkit-overflow-scrolling: touch) {
+  body { -webkit-overflow-scrolling: touch; }
 }
 img  { max-width: 100%; display: block; }
 a    { text-decoration: none; color: inherit; }
@@ -88,8 +91,8 @@ button, a, .btn, .nav-links a, .service-tab, .filter-btn,
   align-items: center;
   justify-content: center;
 }
-a { min-height: auto; min-width: auto; }
-.nav-links a { min-height: auto; padding: 12px 14px; }
+a { min-height: 0; min-width: 0; }
+.nav-links a { min-height: 0; padding: 12px 14px; }
 .service-tab { justify-content: flex-start; }
 .rating-star { min-width: 40px; min-height: 40px; }
 
@@ -817,7 +820,9 @@ a { min-height: auto; min-width: auto; }
     border-bottom: 2px solid rgba(201, 168, 76, 0.2);
     max-height: calc(100vh - 64px - env(safe-area-inset-bottom));
     overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+  }
+  @supports (-webkit-overflow-scrolling: touch) {
+    .nav-links.mobile-open { -webkit-overflow-scrolling: touch; }
   }
   .nav-links.mobile-open li { width: 100%; }
   .nav-links.mobile-open a {
@@ -912,11 +917,14 @@ a { min-height: auto; min-width: auto; }
   .services-tabs {
     display: flex;
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    -ms-overflow-style: none;
     scrollbar-width: none;
     border-bottom: 1px solid rgba(255,255,255,.06);
   }
   .services-tabs::-webkit-scrollbar { display: none; }
+  @supports (-webkit-overflow-scrolling: touch) {
+    .services-tabs { -webkit-overflow-scrolling: touch; }
+  }
   .service-tab {
     flex: 0 0 auto;
     flex-direction: column;
@@ -1400,7 +1408,7 @@ a { min-height: auto; min-width: auto; }
 
 /* ── Landscape orientation fix (phones) ───────────────────── */
 @media (max-height: 500px) and (orientation: landscape) {
-  .hero { min-height: auto; padding-bottom: 40px; }
+  .hero { min-height: 0; padding-bottom: 40px; }
   .hero-content { grid-template-columns: 1fr 1fr; gap: 24px; padding: 20px 0; }
   .hero-right    { order: 0; align-items: flex-end; }
   .african-female-img { width: 220px !important; max-height: 240px; }

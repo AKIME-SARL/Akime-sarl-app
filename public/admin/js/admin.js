@@ -3364,19 +3364,9 @@ function showOrHideTestimonialBadge(pending) {
   }
 }
 
-// Helper: ensures a badge exists on the Messages nav and updates it
 function showOrHideUnreadBadge(unread) {
-  const navItem = document.querySelector('.nav-item[data-section="messages"]');
-  if (!navItem) return;
-
-  let badge = navItem.querySelector('.unread-badge');
-  if (!badge) {
-    badge = document.createElement('span');
-    badge.className = 'unread-badge';
-    // Minimal inline style so it works without extra CSS
-    badge.style.cssText = 'margin-left:8px;background:#dc3545;color:#fff;border-radius:999px;padding:2px 6px;font-size:12px;font-weight:700;display:none;';
-    navItem.appendChild(badge);
-  }
+  const badge = document.getElementById('unreadBadge');
+  if (!badge) return;
 
   if (unread > 0) {
     badge.textContent = unread;
