@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # A-KIME Sarl — Plateforme Web Officielle
 
 > Version **6.2.0** — GitHub Initial Release
@@ -84,3 +85,6 @@ EMAIL_USER=votre@gmail.com
 EMAIL_PASS=votre_app_password
 COMPANY_EMAIL=infosakime@gmail.com
 ```
+=======
+# AKIME-SARL
+>>>>>>> e39c538f993f8017d504a47751a2d6d18c4e26e8
