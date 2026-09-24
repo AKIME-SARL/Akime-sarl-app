@@ -1,5 +1,22 @@
 const AuditLog = require('../models/AuditLog');
 
+// Audit events must never become a second password/token database.  Keep a
+// useful record of which fields changed, but never persist their values.
+const SENSITIVE_KEYS = new Set([
+  'password', 'currentpassword', 'newpassword', 'refreshtoken', 'accesstoken',
+  'token', 'twofactorcode', 'twofactorsecret', 'authorization', 'cookie',
+  'emailpass', 'passwordresettoken'
+]);
+
+function redact(value, key = '') {
+  if (SENSITIVE_KEYS.has(String(key).toLowerCase())) return '[REDACTED]';
+  if (Array.isArray(value)) return value.map(item => redact(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redact(v, k)]));
+  }
+  return value;
+}
+
 const auditLog = (action, resource) => {
   return async (req, res, next) => {
     // Store the original send function
@@ -27,7 +44,7 @@ const auditLog = (action, resource) => {
             resource,
             resourceId: req.params?.id || parsedData?.data?._id || null,
             details: {
-              requestBody: req.body,
+              requestBody: redact(req.body),
               responseStatus: res.statusCode
             },
             ipAddress: req.ip || req.connection.remoteAddress,

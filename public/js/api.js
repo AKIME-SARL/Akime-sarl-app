@@ -15,12 +15,11 @@
 
 (function (global) {
   // ── Token storage helpers ──────────────────────────────────────────────────
-  function getAccessToken()  { return localStorage.getItem('accessToken');  }
-  function getRefreshToken() { return localStorage.getItem('refreshToken'); }
-  function setAccessToken(t) { localStorage.setItem('accessToken', t);      }
+  function getAccessToken()  { return sessionStorage.getItem('accessToken');  }
+  function setAccessToken(t) { sessionStorage.setItem('accessToken', t);      }
 
   function redirectToLogin() {
-    localStorage.clear();
+    sessionStorage.clear();
     window.location.replace('/admin/login');
   }
 
@@ -39,14 +38,10 @@
     if (_refreshPromise) return _refreshPromise;
 
     _refreshPromise = (async () => {
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) { redirectToLogin(); return null; }
-
       try {
         const res  = await fetch('/api/auth/refresh', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
+          credentials: 'same-origin',
         });
         const data = await res.json();
 
@@ -136,10 +131,10 @@
     try {
       await apiFetch('/api/auth/logout', {
         method: 'POST',
-        body: { refreshToken: getRefreshToken() },
+        credentials: 'same-origin',
       });
     } catch { /* ignore — clear anyway */ }
-    localStorage.clear();
+    sessionStorage.clear();
     window.location.replace('/admin/login');
   }
 

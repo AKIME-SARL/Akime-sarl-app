@@ -15,7 +15,6 @@ const auth = (requiredRoles = []) => {
     try {
       // Extract token from header
       const authHeader = req.headers.authorization;
-      console.log('Authorization header:', authHeader);
       const token = jwtUtils.extractTokenFromHeader(authHeader);
 
       if (!token) {

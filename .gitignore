@@ -1,29 +1,37 @@
-# ── Dependencies ──────────────────────────────────────────────
+# Dependencies
 node_modules/
 
-# ── Environment ───────────────────────────────────────────────
+# Environment — NEVER commit
 .env
+.env.example
+.env.local
+.env.*.local
 
-# ── Uploads (user-generated — store on server / cloud) ────────
+# Uploads (user-generated content)
 uploads/projects/*
 uploads/equipment/*
 uploads/services/*
 uploads/general/*
-uploads/avatars/*
+uploads/images/*
 !uploads/**/.gitkeep
 
-# ── Logs ──────────────────────────────────────────────────────
+# Logs
 logs/
 *.log
 
-# ── Backups ───────────────────────────────────────────────────
+# Backups
 backups/
 
-
-
-# ── OS / Editor ───────────────────────────────────────────────
+# OS
 .DS_Store
 Thumbs.db
+
+# Editor
 .vscode/
 .idea/
 *.swp
+*.swo
+
+# Build
+dist/
+build/

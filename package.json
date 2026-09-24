@@ -13,7 +13,11 @@
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
     "seed": "node scripts/seed.js",
-    "fix-admin-roles": "node scripts/fix-admin-roles.js"
+    "fix-admin-roles": "node scripts/fix-admin-roles.js",
+    "migrate-legacy-content-ids": "node scripts/migrate-legacy-content-ids.js",
+    "security-remediate": "node scripts/security-remediate.js --apply",
+    "security-sanitize-backups": "node scripts/sanitize-backups.js",
+    "security-rotate-jwt": "node scripts/rotate-jwt-secrets.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -29,7 +33,7 @@
     "mongoose": "^8.17.1",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.9.14",
+    "nodemailer": "9.0.6",
     "qrcode": "^1.5.4",
     "speakeasy": "^2.0.0",
     "xss-clean": "^0.1.4"

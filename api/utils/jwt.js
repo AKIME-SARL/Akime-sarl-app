@@ -4,7 +4,7 @@ const crypto = require('crypto');
 class JWTUtils {
   constructor() {
     this.accessTokenSecret = process.env.JWT_SECRET;
-    this.refreshTokenSecret = process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET + '_refresh';
+    this.refreshTokenSecret = process.env.JWT_REFRESH_SECRET;
     this.accessTokenExpiry = process.env.JWT_EXPIRES_IN || '15m';
     this.refreshTokenExpiry = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
   }
@@ -96,6 +96,10 @@ class JWTUtils {
    */
   generateSecureToken() {
     return crypto.randomBytes(32).toString('hex');
+  }
+
+  hashToken(token) {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 
   /**

@@ -1,10 +1,12 @@
 
 // A-KIME Admin Dashboard JavaScript
+// Keep short-lived access tokens only for the current tab.  The long-lived
+// refresh token is an HttpOnly cookie and is never readable by JavaScript.
+const sessionStore = window.sessionStorage;
 class AdminDashboard {
     constructor() {
-        this.token = localStorage.getItem('akime_token');
-        this.refreshToken = localStorage.getItem('akime_refresh_token');
-        this.user = JSON.parse(localStorage.getItem('akime_user') || '{}');
+        this.token = sessionStore.getItem('akime_token');
+        this.user = JSON.parse(sessionStore.getItem('akime_user') || '{}');
         this.currentSection = 'dashboard';
         this.apiBase = '/api';
         this.BASE_URL = '';
@@ -39,9 +41,8 @@ class AdminDashboard {
     }
 
     clearAuthData() {
-        localStorage.removeItem('akime_token');
-        localStorage.removeItem('akime_refresh_token');
-        localStorage.removeItem('akime_user');
+        sessionStore.removeItem('akime_token');
+        sessionStore.removeItem('akime_user');
     }
 
     
@@ -66,23 +67,16 @@ class AdminDashboard {
 
     async refreshAccessToken() {
         try {
-            if (!this.refreshToken) {
-                return false;
-            }
-
             const response = await fetch(`${this.apiBase}/auth/refresh`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ refreshToken: this.refreshToken })
+                credentials: 'same-origin'
             });
 
             const data = await response.json();
 
             if (data.success) {
                 this.token = data.data.accessToken;
-                localStorage.setItem('akime_token', this.token);
+                sessionStore.setItem('akime_token', this.token);
                 return true;
             }
             return false;
@@ -658,76 +652,75 @@ class AdminDashboard {
     }
 
     async loadServicesSection() {
-    try {
-        const services = await this.apiCall('/api/content/services');
         const el = document.getElementById('services');
+        el.innerHTML = `<div class="loading"><div class="spinner"></div><p>Chargement des services…</p></div>`;
+        try {
+            const services = await this.apiCall('/api/content/services');
+            const sc = document.getElementById('servicesCount');
+            if (sc) sc.textContent = Array.isArray(services) ? services.length : 0;
 
-        // Update dashboard stat
-        const sc = document.getElementById('servicesCount');
-        if (sc) sc.textContent = services ? services.length : 0;
-
-        el.innerHTML = `
-            <div class="section-header">
-                <div class="page-title"><i class="fas fa-concierge-bell"></i> Gestion des Services</div>
-                <button class="btn btn-gold" id="addServiceBtn">
-                    <i class="fas fa-plus"></i> Ajouter un service
-                </button>
-            </div>
-
-            ${!services || services.length === 0 ? `
-                <div class="panel-card" style="text-align:center; padding:48px;">
-                    <i class="fas fa-concierge-bell" style="font-size:3rem;color:var(--gray);margin-bottom:16px;display:block;"></i>
-                    <p style="color:var(--gray-dark);font-size:.9rem;">Aucun service. Cliquez sur <strong>Ajouter un service</strong> pour commencer.</p>
+            el.innerHTML = `
+                <div class="section-header" style="margin-bottom:24px;">
+                    <div class="page-title"><i class="fas fa-concierge-bell"></i> Services</div>
+                    <button class="btn btn-gold" id="addServiceBtn">
+                        <i class="fas fa-plus"></i> Nouveau service
+                    </button>
                 </div>
-            ` : `
-                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px;">
-                    ${services.map(s => `
-                        <div class="panel-card" style="padding:0;overflow:hidden;cursor:pointer;" data-id="${s._id}">
-                            <!-- Image -->
-                            <div style="height:160px;background:linear-gradient(135deg,var(--navy),var(--navy-light));overflow:hidden;position:relative;">
-                                ${s.imageUrl
-                                    ? `<img src="${s.imageUrl}" alt="${s.name || s.title}" style="width:100%;height:100%;object-fit:cover;">`
-                                    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.25);font-size:2.5rem;"><i class="fas fa-concierge-bell"></i></div>`
-                                }
-                                <!-- Sub-page tags -->
-                                ${s.subPages && s.subPages.length > 0 ? `
-                                    <div style="position:absolute;bottom:10px;left:10px;display:flex;flex-wrap:wrap;gap:4px;">
-                                        ${s.subPages.map(sp => `
-                                            <span style="background:var(--gold);color:var(--navy);font-size:.6rem;font-weight:800;letter-spacing:.06em;padding:3px 8px;border-radius:3px;text-transform:uppercase;">${sp.title}</span>
-                                        `).join('')}
+                ${!services || services.length === 0 ? `
+                    <div class="panel-card" style="text-align:center;padding:56px 24px;">
+                        <i class="fas fa-concierge-bell" style="font-size:3rem;color:var(--gray);display:block;margin-bottom:16px;"></i>
+                        <p style="color:var(--gray-dark);font-size:.92rem;margin-bottom:20px;">Aucun service enregistré.</p>
+                        <button class="btn btn-gold" id="addServiceBtnEmpty"><i class="fas fa-plus"></i> Ajouter le premier service</button>
+                    </div>
+                ` : `
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;">
+                        ${services.map(s => `
+                            <div class="panel-card" style="padding:0;overflow:hidden;">
+                                <div style="height:155px;background:linear-gradient(135deg,var(--navy),#1e3d78);position:relative;overflow:hidden;">
+                                    ${s.imageUrl
+                                        ? `<img src="${s.imageUrl}" alt="${s.name||s.title||''}"
+                                               style="width:100%;height:100%;object-fit:cover;">`
+                                        : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.2);font-size:2.5rem;">
+                                               <i class="fas ${s.icon||'fa-concierge-bell'}"></i>
+                                           </div>`
+                                    }
+                                    ${s.subPages&&s.subPages.length>0 ? `
+                                        <div style="position:absolute;bottom:8px;left:8px;display:flex;flex-wrap:wrap;gap:4px;">
+                                            ${s.subPages.map(sp=>`
+                                                <span style="background:var(--gold);color:var(--navy);font-size:.58rem;font-weight:800;padding:2px 7px;border-radius:3px;text-transform:uppercase;">${sp.title}</span>
+                                            `).join('')}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                <div style="padding:16px 18px;">
+                                    <div style="font-size:1rem;font-weight:800;color:var(--navy);margin-bottom:4px;">${s.name||s.title||'—'}</div>
+                                    <div style="font-size:.78rem;color:var(--gray-dark);line-height:1.5;margin-bottom:14px;min-height:36px;">${(s.description||'').slice(0,90)}${s.description&&s.description.length>90?'…':''}</div>
+                                    <div style="display:flex;gap:8px;">
+                                        <button class="btn btn-sm btn-primary edit-service-btn" data-id="${s._id}" title="Modifier">
+                                            <i class="fas fa-edit"></i> Modifier
+                                        </button>
+                                        <button class="btn btn-sm btn-danger delete-service-btn" data-id="${s._id}" title="Supprimer">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
                                     </div>
-                                ` : ''}
-                            </div>
-                            <!-- Body -->
-                            <div style="padding:18px 20px;">
-                                <div style="font-size:1.05rem;font-weight:800;color:var(--navy);margin-bottom:6px;">${s.name || s.title || '—'}</div>
-                                <div style="font-size:.8rem;color:var(--gray-dark);line-height:1.6;margin-bottom:14px;">${(s.description||'').substring(0,100)}${s.description&&s.description.length>100?'…':''}</div>
-                                <div style="display:flex;gap:8px;">
-                                    <button class="btn btn-sm btn-primary edit-service-btn" data-id="${s._id}">
-                                        <i class="fas fa-edit"></i> Modifier
-                                    </button>
-                                    <button class="btn btn-sm btn-danger delete-service-btn" data-id="${s._id}">
-                                        <i class="fas fa-trash"></i> Supprimer
-                                    </button>
                                 </div>
                             </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `}
-        `;
+                        `).join('')}
+                    </div>
+                `}`;
 
-        document.getElementById('addServiceBtn')?.addEventListener('click', () => this.showServiceForm());
-        this.attachServiceEventListeners();
+            document.getElementById('addServiceBtn')?.addEventListener('click', () => this.showServiceForm());
+            document.getElementById('addServiceBtnEmpty')?.addEventListener('click', () => this.showServiceForm());
+            this.attachServiceEventListeners();
 
-    } catch (err) {
-        console.error('loadServicesSection error:', err);
-        document.getElementById('services').innerHTML = `
-            <div class="page-title"><i class="fas fa-concierge-bell"></i> Services</div>
-            <p style="color:var(--danger);padding:20px;">Impossible de charger les services : ${err.message}</p>
-        `;
+        } catch (err) {
+            console.error('loadServicesSection error:', err);
+            el.innerHTML = `<div class="page-title"><i class="fas fa-concierge-bell"></i> Services</div>
+                <div class="panel-card" style="padding:24px;color:var(--danger);">
+                    <i class="fas fa-exclamation-triangle"></i> Impossible de charger : ${err.message}
+                </div>`;
+        }
     }
-}
 
     async loadEquipmentSection() {
         const equipment = await this.apiCall('/api/content/equipment');
@@ -758,52 +751,115 @@ class AdminDashboard {
     }
 
     async loadProjectsSection() {
-    try {
-        const projects = await this.apiCall('/api/content/projects');
-        const sectionElement = document.getElementById('projects');
+        const el = document.getElementById('projects');
+        el.innerHTML = `<div class="loading"><div class="spinner"></div><p>Chargement des projets…</p></div>`;
+        try {
+            const projects = await this.apiCall('/api/content/projects');
+            const pc = document.getElementById('projectsCount');
+            if (pc) pc.textContent = Array.isArray(projects) ? projects.length : 0;
 
-        sectionElement.innerHTML = `
-            <div class="section-header">
-                <h1 class="page-title">Gestion des Projets</h1>
-                <button class="btn btn-primary" id="addProjectBtn">
-                    <i class="fas fa-plus"></i> Ajouter un projet
-                </button>
-            </div>
-            <div class="data-table">
-                <div class="table-header">
-                    <h3>Projets (${projects.length})</h3>
+            const catLabel = {
+                'gros-oeuvre':'Gros Œuvre', civil:'Génie Civil', metal:'Métallique',
+                metallique:'Métallique', renovation:'Rénovation', finition:'Finition',
+                nettoyage:'Nettoyage', 'pure-water':'Pure Water', divers:'Divers',
+            };
+            const catColor = {
+                'gros-oeuvre':'#1a3560', civil:'#1a5276', metal:'#1a7a4a',
+                metallique:'#1a7a4a', renovation:'#7b3f00', finition:'#4a235a',
+                nettoyage:'#0e6655', 'pure-water':'#1a5276', divers:'#5a6a7a',
+            };
+
+            el.innerHTML = `
+                <div class="section-header" style="margin-bottom:24px;">
+                    <div class="page-title"><i class="fas fa-hard-hat"></i> Projets</div>
+                    <button class="btn btn-gold" id="addProjectBtn">
+                        <i class="fas fa-plus"></i> Nouveau projet
+                    </button>
                 </div>
-                <div class="table-content">
-                    ${this.renderProjectsTable(projects)}
-                </div>
-            </div>
-        `;
+                ${!projects || projects.length === 0 ? `
+                    <div class="panel-card" style="text-align:center;padding:56px 24px;">
+                        <i class="fas fa-hard-hat" style="font-size:3rem;color:var(--gray);display:block;margin-bottom:16px;"></i>
+                        <p style="color:var(--gray-dark);font-size:.92rem;margin-bottom:20px;">Aucun projet enregistré.</p>
+                        <button class="btn btn-gold" id="addProjectBtnEmpty"><i class="fas fa-plus"></i> Ajouter le premier projet</button>
+                    </div>
+                ` : `
+                    <div class="data-table">
+                        <div class="table-header">
+                            <h3>Projets (${projects.length})</h3>
+                        </div>
+                        <div class="table-content">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Image</th>
+                                        <th>Titre</th>
+                                        <th>Catégorie</th>
+                                        <th>Localisation</th>
+                                        <th>Date</th>
+                                        <th style="text-align:center;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${projects.map(p => {
+                                        const cat   = (p.category||'').toLowerCase();
+                                        const label = catLabel[cat] || p.category || '—';
+                                        const color = catColor[cat] || '#5a6a7a';
+                                        const date  = p.date
+                                            ? new Date(p.date).getFullYear()
+                                            : (p.createdAt ? new Date(p.createdAt).getFullYear() : '—');
+                                        return `
+                                        <tr>
+                                            <td>
+                                                ${p.imageUrl
+                                                    ? `<img src="${p.imageUrl}" alt="${p.title||''}"
+                                                           style="width:60px;height:42px;object-fit:cover;border-radius:5px;">
+                                                       <div style="display:none;width:60px;height:42px;background:var(--gray-light);border-radius:5px;align-items:center;justify-content:center;color:var(--gray);font-size:.7rem;">
+                                                           <i class="fas fa-image"></i>
+                                                       </div>`
+                                                    : `<div style="width:60px;height:42px;background:var(--gray-light);border-radius:5px;display:flex;align-items:center;justify-content:center;color:var(--gray);"><i class="fas fa-image"></i></div>`
+                                                }
+                                            </td>
+                                            <td style="font-weight:600;color:var(--navy);">${p.title||'—'}</td>
+                                            <td>
+                                                <span style="background:${color};color:#fff;font-size:.68rem;font-weight:700;padding:3px 9px;border-radius:12px;">${label}</span>
+                                            </td>
+                                            <td style="color:var(--gray-dark);font-size:.82rem;">${p.location||'—'}</td>
+                                            <td style="color:var(--gray-dark);">${date}</td>
+                                            <td style="text-align:center;">
+                                                <div style="display:flex;gap:6px;justify-content:center;">
+                                                    <button class="btn btn-sm btn-primary edit-project-btn" data-id="${p._id}" title="Modifier">
+                                                        <i class="fas fa-edit"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-danger delete-project-btn" data-id="${p._id}" title="Supprimer">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>`;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `}`;
 
-        // Bouton Ajouter
-        document.getElementById('addProjectBtn')?.addEventListener('click', () => this.addProject());
+            document.getElementById('addProjectBtn')?.addEventListener('click', () => this.showProjectForm());
+            document.getElementById('addProjectBtnEmpty')?.addEventListener('click', () => this.showProjectForm());
+            this.attachProjectEventListeners();
 
-        // Boutons Modifier / Supprimer
-        this.attachProjectEventListeners();
-
-        // 🔄 Rafraîchit la preview publique (portfolio.html)
-        this.refreshPreview();
-
-    } catch (error) {
-        console.error("Erreur lors du chargement des projets:", error);
-        const sectionElement = document.getElementById('projects');
-        sectionElement.innerHTML = `
-            <div class="section-header">
-                <h1 class="page-title">Gestion des Projets</h1>
-            </div>
-            <p style="color:red; padding:20px;">Erreur lors du chargement des projets.</p>
-        `;
+        } catch (err) {
+            console.error('loadProjectsSection error:', err);
+            el.innerHTML = `<div class="page-title"><i class="fas fa-hard-hat"></i> Projets</div>
+                <div class="panel-card" style="padding:24px;color:var(--danger);">
+                    <i class="fas fa-exclamation-triangle"></i> Impossible de charger : ${err.message}
+                </div>`;
+        }
     }
-}
 
   // ================== MESSAGES ===================
     async loadMessagesSection() {
     try {
-        const token = localStorage.getItem("akime_token"); // ✅ use your token
+        const token = sessionStore.getItem("akime_token"); // ✅ use your token
         if (!token) {
             document.querySelector("#messages").innerHTML = `<p>Non autorisé. Veuillez vous reconnecter.</p>`;
             return;
@@ -825,6 +881,7 @@ class AdminDashboard {
                 container.querySelector(".loading")?.remove(); // ✅ remove loader if exists
                 container.innerHTML = this.renderMessagesTable(result.data);
                 this.attachMessageBulkEventListeners();
+                this.attachMessageEventListeners();
             }
         } else {
             throw new Error(result.message || "Erreur lors du chargement");
@@ -954,20 +1011,17 @@ class AdminDashboard {
                         <td style="padding: 12px;">${new Date(msg.createdAt).toLocaleDateString()}</td>
                         <td style="padding: 12px; text-align: center;">
                             ${!msg.read ? `
-                                <button class="btn btn-sm" 
-                                    onclick="adminDashboard.openAndMarkAsRead('${msg._id}')" 
+                                <button class="btn btn-sm view-unread-message-btn" data-id="${msg._id}"
                                     style="background: #007bff; color: white; margin-right: 5px;">
                                     <i class="fas fa-eye"></i>
                                 </button>
                             ` : `
-                                <button class="btn btn-sm" 
-                                    onclick="adminDashboard.showFullMessage('${msg._id}')"
+                                <button class="btn btn-sm view-message-btn" data-id="${msg._id}"
                                     style="background: #6c757d; color: white; margin-right: 5px;">
                                     <i class="fas fa-eye"></i>
                                 </button>
                             `}
-                            <button class="btn btn-sm" 
-                                onclick="adminDashboard.deleteMessage('${msg._id}')"
+                            <button class="btn btn-sm delete-message-btn" data-id="${msg._id}"
                                 style="background: #dc3545; color: white;">
                                 <i class="fas fa-trash"></i>
                             </button>
@@ -1003,10 +1057,11 @@ async openAndMarkAsRead(messageId) {
             <div style="background:white;padding:20px;border-radius:8px;max-width:600px;width:100%;">
                 <h2>${title}</h2>
                 <div>${content}</div>
-                <button onclick="this.closest('div').parentNode.remove()" style="margin-top:15px;background:#333;color:white;padding:8px 12px;border:none;border-radius:4px;">Fermer</button>
+                <button class="simple-modal-close" style="margin-top:15px;background:#333;color:white;padding:8px 12px;border:none;border-radius:4px;">Fermer</button>
             </div>
         `;
         document.body.appendChild(modal);
+        modal.querySelector('.simple-modal-close')?.addEventListener('click', () => modal.remove());
     }
 
     
@@ -1016,7 +1071,7 @@ async markAsRead(messageId) {
         const res = await fetch(`${this.apiBase}/contact/${messageId}/read`, {
             method: "PUT",
             headers: {
-                "Authorization": "Bearer " + localStorage.getItem("akime_token"),
+                "Authorization": "Bearer " + sessionStore.getItem("akime_token"),
                 "Content-Type": "application/json"
             }
         });
@@ -1065,62 +1120,6 @@ async markAsRead(messageId) {
         document.getElementById('editCompanyBtn')?.addEventListener('click', () => this.editCompany());
     }
 
-    renderServicesTable(services) {
-    if (!services.length) {
-        return '<p style="padding: 20px; text-align: center; color: #666;">Aucun service trouvé.</p>';
-    }
-
-    return `
-        <table style="width: 100%; border-collapse: collapse;">
-            <thead>
-                <tr style="border-bottom: 1px solid #e9ecef; background: #f8f9fa;">
-                    <th style="padding: 12px; text-align: left;">Titre</th>
-                    <th style="padding: 12px; text-align: left;">Catégorie</th>
-                    <th style="padding: 12px; text-align: left;">Prix</th>
-                    <th style="padding: 12px; text-align: left;">Caractéristiques</th>
-                    <th style="padding: 12px; text-align: left;">Description</th>
-                    <th style="padding: 12px; text-align: center;">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${services.map(service => {
-                    const shortDesc = service.description 
-                        ? service.description.substring(0, 80) + (service.description.length > 80 ? "..." : "")
-                        : "(Pas de description)";
-
-                    const featuresCount = service.features && service.features.length 
-                        ? `${service.features.length} élément(s)` 
-                        : "—";
-
-                    return `
-                        <tr style="border-bottom: 1px solid #f8f9fa;">
-                            <td style="padding: 12px;">${service.title || '-'}</td>
-                            <td style="padding: 12px;">${service.category || '-'}</td>
-                            <td style="padding: 12px;">${service.price || 'Sur devis'}</td>
-                            <td style="padding: 12px;">${featuresCount}</td>
-                            <td style="padding: 12px;" title="${service.description || ''}">${shortDesc}</td>
-                            <td style="padding: 12px; text-align: center;">
-                                <button class="btn btn-sm edit-service-btn" 
-                                        data-id="${service._id}" 
-                                        title="Modifier" 
-                                        style="background: #28a745; color: white; margin-right: 5px;">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <button class="btn btn-sm delete-service-btn" 
-                                        data-id="${service._id}" 
-                                        title="Supprimer" 
-                                        style="background: #dc3545; color: white;">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                }).join('')}
-            </tbody>
-        </table>
-    `;
-}
-
     renderEquipmentTable(equipment) {
         if (!equipment.length) {
             return '<p>Aucun équipement trouvé.</p>';
@@ -1157,80 +1156,6 @@ async markAsRead(messageId) {
         `;
     }
 
-    renderProjectsTable(projects) {
-    if (!projects.length) {
-        return '<p style="padding: 20px; text-align: center; color: #666;">Aucun projet trouvé.</p>';
-    }
-
-    // Fonction utilitaire pour donner une couleur aux catégories
-    const categoryBadge = (category) => {
-        if (!category) return `<span style="padding: 4px 8px; background:#ccc; border-radius:4px;">-</span>`;
-        const colors = {
-            civil: "#007bff",
-            metal: "#17a2b8",
-            renovation: "#ffc107",
-            other: "#6c757d"
-        };
-        const color = colors[category.toLowerCase()] || "#999";
-        return `<span style="padding:4px 8px; background:${color}; color:#fff; border-radius:4px; font-size:12px;">
-                    ${category.charAt(0).toUpperCase() + category.slice(1)}
-                </span>`;
-    };
-
-    return `
-        <table style="width: 100%; border-collapse: collapse;">
-            <thead>
-                <tr style="border-bottom: 1px solid #e9ecef; background: #f8f9fa;">
-                    <th style="padding: 12px; text-align: left;">Image</th>
-                    <th style="padding: 12px; text-align: left;">Titre</th>
-                    <th style="padding: 12px; text-align: left;">Catégorie</th>
-                    <th style="padding: 12px; text-align: left;">Description</th>
-                    <th style="padding: 12px; text-align: left;">Date</th>
-                    <th style="padding: 12px; text-align: center;">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${projects.map(project => {
-                    const shortDesc = project.description 
-                        ? project.description.substring(0, 80) + (project.description.length > 80 ? "..." : "")
-                        : "(Pas de description)";
-                    
-                    const dateValue = project.date 
-                        ? new Date(project.date).toLocaleDateString()
-                        : (project.createdAt ? new Date(project.createdAt).toLocaleDateString() : "-");
-
-                    return `
-                        <tr style="border-bottom: 1px solid #f8f9fa;">
-                            <td style="padding: 12px;">
-                                <img src="${project.imageUrl || 'images/logo.png'}" 
-                                     alt="${project.title}" 
-                                     style="width: 60px; height: 40px; object-fit: cover; border-radius: 4px;">
-                            </td>
-                            <td style="padding: 12px;">${project.title || '-'}</td>
-                            <td style="padding: 12px;">${categoryBadge(project.category)}</td>
-                            <td style="padding: 12px;" title="${project.description || ''}">${shortDesc}</td>
-                            <td style="padding: 12px;">${dateValue}</td>
-                            <td style="padding: 12px; text-align: center;">
-                                <button class="btn btn-sm edit-project-btn" 
-                                        data-id="${project._id}" 
-                                        title="Modifier" 
-                                        style="background: #28a745; color: white; margin-right: 5px;">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <button class="btn btn-sm delete-project-btn" 
-                                        data-id="${project._id}" 
-                                        title="Supprimer" 
-                                        style="background: #dc3545; color: white;">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                }).join('')}
-            </tbody>
-        </table>
-    `;
-}
 
 // ===========================
 // ---- Témoignages CRUD -----
@@ -1426,7 +1351,7 @@ renderTestimonialsTable(testimonials) {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${this.token}`
                 },
-                body: JSON.stringify({ refreshToken: this.refreshToken })
+                credentials: 'same-origin'
             });
         } catch (error) {
             console.error('Logout error:', error);
@@ -1577,33 +1502,31 @@ renderTestimonialsTable(testimonials) {
     }
 
     attachProjectEventListeners() {
-    // EDIT BUTTONS - Use the same pattern as equipment
-    document.querySelectorAll('.edit-project-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            // Get the ID from the button's data attribute
-            const id = e.currentTarget.dataset.id;
-            console.log('Edit project clicked, ID:', id);
-            this.editProject(id);
+        document.querySelectorAll('.edit-project-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                this.showProjectForm(btn.dataset.id);
+            });
         });
-    });
-
-    // DELETE BUTTONS
-    document.querySelectorAll('.delete-project-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const id = e.currentTarget.dataset.id;
-            console.log('Delete project clicked, ID:', id);
-            this.deleteProject(id);
+        document.querySelectorAll('.delete-project-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                this.deleteProject(btn.dataset.id);
+            });
         });
-    });
-
-    // Debug: Log how many buttons were found
-    console.log('Project edit buttons found:', document.querySelectorAll('.edit-project-btn').length);
-    console.log('Project delete buttons found:', document.querySelectorAll('.delete-project-btn').length);
-}
+    }
 
 
 
     attachMessageEventListeners() {
+        document.querySelectorAll('.view-unread-message-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.openAndMarkAsRead(btn.dataset.id));
+        });
+
+        document.querySelectorAll('.view-message-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.showFullMessage(btn.dataset.id));
+        });
+
         document.querySelectorAll('.mark-read-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const id = e.target.closest('button').dataset.id;
@@ -1939,14 +1862,18 @@ async approveTestimonial(id) {
         const updatePreview = () => {
             const name = overlay.querySelector('#svcName')?.value || '';
             const desc = overlay.querySelector('#svcDesc')?.value || '';
-            overlay.querySelector('#previewTitle').textContent = name || 'Nom du service';
-            overlay.querySelector('#previewDesc').textContent  = desc || 'Description du service…';
-            overlay.querySelector('#previewTags').innerHTML = subPages.map(sp =>
+            const titleEl    = overlay.querySelector('#previewTitle');
+            const descEl     = overlay.querySelector('#previewDesc');
+            const tagsEl     = overlay.querySelector('#previewTags');
+            const subNavEl   = overlay.querySelector('#previewSubNav');
+            if (titleEl)  titleEl.textContent  = name || 'Nom du service';
+            if (descEl)   descEl.textContent   = desc || 'Description du service…';
+            if (tagsEl)   tagsEl.innerHTML     = subPages.map(sp =>
                 `<span style="background:var(--gold);color:var(--navy);font-size:.6rem;
                  font-weight:800;padding:3px 8px;border-radius:3px;text-transform:uppercase;">
                  ${sp.title}</span>`
             ).join('');
-            overlay.querySelector('#previewSubNav').innerHTML = subPages.map((sp, i) =>
+            if (subNavEl) subNavEl.innerHTML   = subPages.map((sp, i) =>
                 `<button style="padding:6px 14px;border-radius:4px;font-size:.75rem;font-weight:700;
                   border:none;background:${i===0?'var(--navy)':'var(--gray-light)'};
                   color:${i===0?'var(--white)':'var(--gray-dark)'};">${sp.title}</button>`
@@ -2013,7 +1940,7 @@ async approveTestimonial(id) {
             saveBtn.disabled  = true;
 
             try {
-                const token = localStorage.getItem('akime_token');
+                const token = sessionStore.getItem('akime_token');
                 const fd    = new FormData();
                 fd.append('name',        name);
                 fd.append('title',       name);
@@ -2060,37 +1987,36 @@ async approveTestimonial(id) {
     async editService(id) { this.showServiceForm(id); }
 
     async deleteService(id) {
-    if (!confirm("Voulez-vous vraiment supprimer ce service ?")) return;
+        if (!confirm("Voulez-vous vraiment supprimer ce service ?")) return;
 
-    try {
-        const token = localStorage.getItem("akime_token");
+        try {
+            const res = await fetch(`${this.apiBase}/content/services/${id}`, {
+                method: "DELETE",
+                headers: {
+                    "Authorization": `Bearer ${sessionStore.getItem("akime_token")}`,
+                    "Content-Type": "application/json"
+                }
+            });
 
-        const res = await fetch(`${this.apiBase}/content/services/${id}`, {
-            method: "DELETE",
-            headers: {
-                "Authorization": `Bearer ${token}`,
-                "Content-Type": "application/json"
+            const result = await res.json().catch(() => ({}));
+
+            if (!res.ok || result.success !== true) {
+                throw new Error(result.message || `Erreur ${res.status}`);
             }
-        });
 
-        if (!res.ok) {
-            const errorText = await res.text();
-            throw new Error(`Erreur serveur (${res.status}): ${errorText}`);
-        }
+            // Both success and already-gone cases — refresh the UI
+            const msg = result.alreadyGone
+                ? "ℹ️ Service déjà supprimé. Liste mise à jour."
+                : "✅ Service supprimé avec succès.";
+            this.showNotification(msg, "success");
+            await this.loadServicesSection();
+            this.refreshPreview?.();
 
-        const result = await res.json();
-        if (result.success) {
-            this.showNotification("✅ Service supprimé avec succès.", "success");
-            await this.loadServicesSection();  // recharge la liste côté admin
-            this.refreshPreview();             // 🔄 met à jour services.html en temps réel
-        } else {
-            this.showNotification("❌ Erreur lors de la suppression : " + (result.message || "Inconnue"), "error");
+        } catch (err) {
+            console.error("Erreur deleteService:", err);
+            this.showNotification("❌ " + err.message, "error");
         }
-    } catch (err) {
-        console.error("Erreur deleteService:", err);
-        this.showNotification("⚠ Impossible de supprimer le service. Vérifiez la console.", "error");
     }
-}
     // Equipment CRUD operations
     addEquipment() {
         const modal = this.createModal('Ajouter un équipement', this.getEquipmentForm());
@@ -2173,116 +2099,372 @@ async approveTestimonial(id) {
     }
 
 
-  addProject() {
-    const modal = this.createModal('Ajouter un projet', this.getProjectForm());
-    document.body.appendChild(modal);
+  addProject()          { this.showProjectForm(); }
+  async editProject(id) { this.showProjectForm(id); }
 
-    setTimeout(() => {
-        const saveBtn = modal.querySelector('#saveProjectBtn');
-        const closeBtn = modal.querySelector('.modal-close');
-        const overlay = modal.querySelector('.modal-overlay');
-
-        if (saveBtn) {
-            saveBtn.addEventListener('click', async () => {
-                await this.saveProject(modal);
-                this.refreshPreview(); // 🔄 Mise à jour en temps réel portfolio.html
-            });
-        }
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => this.closeModal(modal));
-        }
-        if (overlay) {
-            overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) {
-                    this.closeModal(modal);
-                }
-            });
-        }
-    }, 10);
-}
-
-async editProject(id) {
-    try {
-        console.log('Loading project for editing, ID:', id);
-        
-        // Use the correct API endpoint to get a single project
-        const project = await this.apiCall(`/api/content/projects/${id}`);
-        
-        if (!project) {
-            this.showNotification('Projet non trouvé', 'error');
-            return;
-        }
-
-        console.log('Project data loaded:', project);
-        
-        const modal = this.createModal('Modifier le projet', this.getProjectForm(project));
-        
-        // Wait for the modal to be rendered in the DOM
-        setTimeout(() => {
-            // Add event listener to the save button
-            const saveBtn = modal.querySelector('#saveProjectBtn');
-            if (saveBtn) {
-                saveBtn.addEventListener('click', () => {
-                    console.log('Save button clicked for project:', id);
-                    this.saveProject(modal, id);
-                });
-            } else {
-                console.error('Save button not found in modal');
-            }
-            
-            // Add event listener to close button
-            const closeBtn = modal.querySelector('.modal-close');
-            if (closeBtn) {
-                closeBtn.addEventListener('click', () => {
-                    console.log('Close button clicked');
-                    this.closeModal(modal);
-                });
-            }
-            
-            // Add event listener to overlay (click outside to close)
-            const overlay = modal.querySelector('.modal-overlay');
-            if (overlay) {
-                overlay.addEventListener('click', (e) => {
-                    if (e.target === overlay) {
-                        console.log('Overlay clicked, closing modal');
-                        this.closeModal(modal);
-                    }
-                });
-            }
-        }, 100); // Short delay to ensure DOM is updated
-        
-    } catch (error) {
-        console.error('Error loading project:', error);
-        this.showNotification('Erreur lors du chargement du projet', 'error');
+  // ═══════════════════════════════════════════════════════════
+  // showProjectForm — full-page overlay, create or edit
+  // ═══════════════════════════════════════════════════════════
+  async showProjectForm(projectId = null) {
+    let project = {};
+    if (projectId) {
+      try {
+        const res = await this.apiCall(`/api/content/projects/${projectId}`);
+        project = res || {};
+      } catch {
+        const all = await this.apiCall('/api/content/projects').catch(() => []);
+        project = (all || []).find(p => p._id === projectId) || {};
+      }
     }
-}
 
-async deleteProject(id) {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer ce projet ?')) {
+    const cats = [
+      { value:'gros-oeuvre', label:'Gros Œuvre'             },
+      { value:'civil',       label:'Génie Civil'             },
+      { value:'metallique',  label:'Construction Métallique' },
+      { value:'renovation',  label:'Rénovation'              },
+      { value:'finition',    label:'Finition'                },
+      { value:'nettoyage',   label:'Nettoyage'               },
+      { value:'pure-water',  label:'Pure Water'              },
+      { value:'divers',      label:'Divers'                  },
+    ];
+    const statuses = [
+      { value:'completed', label:'Terminé'  },
+      { value:'ongoing',   label:'En cours' },
+      { value:'planned',   label:'Planifié' },
+    ];
+
+    const overlay = document.createElement('div');
+    overlay.id = 'projectFormOverlay';
+    overlay.style.cssText = `
+      position:fixed;inset:0;background:var(--off-white,#f7f8fc);
+      z-index:600;overflow-y:auto;
+    `;
+
+    overlay.innerHTML = `
+      <div style="position:sticky;top:0;z-index:10;background:var(--white);
+                  border-bottom:1px solid var(--gray-light);padding:14px 28px;
+                  display:flex;align-items:center;gap:14px;
+                  box-shadow:0 2px 8px rgba(0,0,0,.07);">
+        <button id="projBackBtn" style="display:inline-flex;align-items:center;gap:7px;
+                padding:8px 16px;border-radius:6px;background:var(--off-white,#f7f8fc);
+                border:1.5px solid var(--gray-light);color:var(--navy);font-size:.8rem;
+                font-weight:700;cursor:pointer;font-family:inherit;">
+          <i class="fas fa-arrow-left"></i> Retour aux projets
+        </button>
+        <span style="font-size:1rem;font-weight:800;color:var(--navy);">
+          ${projectId ? 'Modifier le projet' : 'Nouveau projet'}
+        </span>
+        <button id="projSaveBtn" style="margin-left:auto;display:inline-flex;align-items:center;
+                gap:8px;padding:10px 26px;border-radius:6px;background:var(--gold);
+                color:var(--navy);font-size:.8rem;font-weight:800;cursor:pointer;
+                border:none;font-family:inherit;">
+          <i class="fas fa-save"></i> Enregistrer
+        </button>
+      </div>
+
+      <div style="max-width:860px;margin:0 auto;padding:28px 20px;
+                  display:grid;grid-template-columns:1fr 1fr;gap:22px;">
+
+        <div>
+          <div class="panel-card">
+            <div class="panel-card-title"><i class="fas fa-info-circle"></i> Informations</div>
+            <div class="form-group">
+              <label>TITRE <span style="color:var(--gold)">*</span></label>
+              <input id="projTitle" type="text" value="${project.title||''}"
+                     placeholder="ex: Immeuble R+3 Bastos">
+            </div>
+            <div class="form-group">
+              <label>CATÉGORIE <span style="color:var(--gold)">*</span></label>
+              <select id="projCategory">
+                <option value="">Sélectionner…</option>
+                ${cats.map(c=>`
+                  <option value="${c.value}" ${(project.category||'')==c.value?'selected':''}>
+                    ${c.label}
+                  </option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>DESCRIPTION <span style="color:var(--gold)">*</span></label>
+              <textarea id="projDesc" rows="4"
+                        placeholder="Décrivez le projet…">${project.description||''}</textarea>
+            </div>
+            <div class="form-group">
+              <label>LOCALISATION</label>
+              <input id="projLocation" type="text" value="${project.location||''}"
+                     placeholder="ex: Douala, Cameroun">
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:20px;">
+          <div class="panel-card">
+            <div class="panel-card-title"><i class="fas fa-image"></i> Image principale</div>
+            <div id="projImgPreview" style="width:100%;height:150px;border-radius:8px;
+                 overflow:hidden;background:var(--off-white,#f7f8fc);
+                 border:2px dashed var(--gray-light);margin-bottom:12px;
+                 display:flex;align-items:center;justify-content:center;
+                 color:var(--gray);font-size:.82rem;">
+              ${project.imageUrl
+                ? `<img src="${project.imageUrl}" style="width:100%;height:100%;object-fit:cover;"
+                        >`
+                : `<div style="text-align:center;"><i class="fas fa-image" style="font-size:2rem;display:block;margin-bottom:6px;"></i>Aucune image</div>`
+              }
+            </div>
+            <label style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;
+                   background:var(--navy);color:var(--white);border-radius:6px;
+                   font-size:.75rem;font-weight:700;cursor:pointer;">
+              <i class="fas fa-upload"></i> CHOISIR UNE IMAGE
+              <input type="file" id="projImageFile" accept="image/*" style="display:none;">
+            </label>
+            <span id="projImageName" style="font-size:.73rem;color:var(--gray);margin-left:8px;"></span>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-title"><i class="fas fa-images"></i> Galerie photos</div>
+            <p style="margin:0 0 12px;color:var(--gray);font-size:.78rem;line-height:1.45;">
+              Ajoutez jusqu'à 10 photos supplémentaires. Elles seront visibles dans la galerie du projet sur le site.
+            </p>
+            <div id="projGalleryExisting" style="display:none;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px;margin-bottom:12px;"></div>
+            <div id="projGalleryPreview" style="display:none;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px;margin-bottom:12px;"></div>
+            <label style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;
+                   background:var(--navy);color:var(--white);border-radius:6px;
+                   font-size:.75rem;font-weight:700;cursor:pointer;">
+              <i class="fas fa-images"></i> AJOUTER DES PHOTOS
+              <input type="file" id="projGalleryFiles" accept="image/*" multiple style="display:none;">
+            </label>
+            <span id="projGalleryCount" style="font-size:.73rem;color:var(--gray);margin-left:8px;"></span>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-title"><i class="fas fa-calendar"></i> Détails</div>
+            <div class="form-group">
+              <label>CLIENT</label>
+              <input id="projClient" type="text" value="${project.client||''}"
+                     placeholder="ex: Privé, Mairie de Douala">
+            </div>
+            <div class="form-group">
+              <label>STATUT</label>
+              <select id="projStatus">
+                ${statuses.map(s=>`
+                  <option value="${s.value}" ${(project.status||'completed')==s.value?'selected':''}>
+                    ${s.label}
+                  </option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>ANNÉE</label>
+              <input id="projYear" type="number" value="${project.year||new Date().getFullYear()}"
+                     min="1990" max="2099">
+            </div>
+            <div class="form-group">
+              <label>SUPERFICIE (m²)</label>
+              <input id="projArea" type="text" value="${project.area||''}"
+                     placeholder="ex: 450 m²">
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Image preview
+    overlay.querySelector('#projImageFile').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      overlay.querySelector('#projImageName').textContent = file.name;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        overlay.querySelector('#projImgPreview').innerHTML =
+          `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Gallery images are kept separately so the admin can add images in several selections.
+    // The API accepts up to 10 new gallery files per save operation.
+    const galleryFiles = [];
+    const existingGallery = Array.isArray(project.gallery) ? [...project.gallery] : [];
+    const existingGalleryPreview = overlay.querySelector('#projGalleryExisting');
+    const galleryPreview = overlay.querySelector('#projGalleryPreview');
+    const galleryCount = overlay.querySelector('#projGalleryCount');
+
+    const renderExistingGallery = () => {
+      if (!existingGallery.length) {
+        existingGalleryPreview.style.display = 'none';
+        existingGalleryPreview.innerHTML = '';
         return;
-    }
+      }
 
-    try {
-        // FIXED: Use the apiCall method which already handles authentication
-        await this.apiCall(`/api/content/projects/${id}`, {
-            method: 'DELETE'
+      existingGalleryPreview.style.display = 'grid';
+      existingGalleryPreview.innerHTML = existingGallery.map((url, index) => `
+        <div style="position:relative;aspect-ratio:1;">
+          <img src="${url}" alt="Photo de galerie" style="width:100%;height:100%;object-fit:cover;border-radius:5px;border:1px solid var(--gray-light);">
+          <button type="button" class="remove-existing-gallery-file" data-index="${index}" title="Supprimer cette photo"
+                  style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:#c0392b;color:#fff;cursor:pointer;font-size:12px;line-height:20px;">×</button>
+        </div>
+      `).join('');
+    };
+
+    const renderGalleryFiles = () => {
+      if (!galleryFiles.length) {
+        galleryPreview.style.display = 'none';
+      } else {
+        galleryPreview.style.display = 'grid';
+        galleryPreview.innerHTML = galleryFiles.map(({ file, previewUrl }, index) => `
+          <div style="position:relative;aspect-ratio:1;">
+            <img src="${previewUrl}" alt="${file.name}" style="width:100%;height:100%;object-fit:cover;border-radius:5px;border:1px solid var(--gray-light);">
+            <button type="button" class="remove-gallery-file" data-index="${index}" title="Retirer cette photo"
+                    style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:#c0392b;color:#fff;cursor:pointer;font-size:12px;line-height:20px;">×</button>
+          </div>
+        `).join('');
+      }
+
+      const total = existingGallery.length + galleryFiles.length;
+      galleryCount.textContent = total
+        ? `${total} photo(s) dans la galerie${galleryFiles.length ? ` (${galleryFiles.length} nouvelle(s))` : ''}`
+        : '';
+    };
+
+    renderExistingGallery();
+    renderGalleryFiles();
+
+    existingGalleryPreview.addEventListener('click', e => {
+      const button = e.target.closest('.remove-existing-gallery-file');
+      if (!button) return;
+      existingGallery.splice(Number(button.dataset.index), 1);
+      renderExistingGallery();
+      renderGalleryFiles();
+    });
+
+    overlay.querySelector('#projGalleryFiles').addEventListener('change', e => {
+      const selected = Array.from(e.target.files || []);
+      const available = 10 - galleryFiles.length;
+      if (selected.length > available) {
+        this.showNotification(`Vous pouvez ajouter au maximum 10 nouvelles photos à la fois.`, 'error');
+      }
+
+      selected.slice(0, Math.max(0, available)).forEach(file => {
+        galleryFiles.push({ file, previewUrl: URL.createObjectURL(file) });
+      });
+      e.target.value = '';
+      renderGalleryFiles();
+    });
+
+    galleryPreview.addEventListener('click', e => {
+      const button = e.target.closest('.remove-gallery-file');
+      if (!button) return;
+      const index = Number(button.dataset.index);
+      const [removed] = galleryFiles.splice(index, 1);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      renderGalleryFiles();
+    });
+
+    const releaseGalleryPreviews = () => {
+      galleryFiles.forEach(({ previewUrl }) => URL.revokeObjectURL(previewUrl));
+    };
+
+    // Back
+    overlay.querySelector('#projBackBtn').addEventListener('click', () => {
+      releaseGalleryPreviews();
+      overlay.remove();
+    });
+
+    // Save
+    overlay.querySelector('#projSaveBtn').addEventListener('click', async () => {
+      const title    = overlay.querySelector('#projTitle').value.trim();
+      const category = overlay.querySelector('#projCategory').value;
+      const desc     = overlay.querySelector('#projDesc').value.trim();
+      const location = overlay.querySelector('#projLocation').value.trim();
+      const client   = overlay.querySelector('#projClient').value.trim();
+      const status   = overlay.querySelector('#projStatus').value;
+      const year     = overlay.querySelector('#projYear').value;
+      const area     = overlay.querySelector('#projArea').value.trim();
+      const imgFile  = overlay.querySelector('#projImageFile').files[0];
+
+      if (!title || !category || !desc) {
+        this.showNotification('Titre, catégorie et description sont obligatoires.', 'error');
+        return;
+      }
+
+      const saveBtn = overlay.querySelector('#projSaveBtn');
+      saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enregistrement…';
+      saveBtn.disabled  = true;
+
+      try {
+        const token = sessionStore.getItem('akime_token');
+        const fd    = new FormData();
+        fd.append('title',       title);
+        fd.append('category',    category);
+        fd.append('description', desc);
+        if (location) fd.append('location',    location);
+        if (client)   fd.append('client',      client);
+        if (status)   fd.append('status',      status);
+        if (year)     fd.append('year',        year);
+        if (area)     fd.append('area',        area);
+        if (imgFile)  fd.append('image',       imgFile);
+        // Sending the retained URLs lets the API remove photos deleted in this editor.
+        fd.append('gallery', JSON.stringify(existingGallery));
+        galleryFiles.forEach(({ file }) => fd.append('gallery', file));
+
+        const url    = projectId
+          ? `${this.apiBase}/content/projects/${projectId}`
+          : `${this.apiBase}/content/projects`;
+        const method = projectId ? 'PUT' : 'POST';
+
+        const res    = await fetch(url, {
+          method,
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: fd,
         });
+        const result = await res.json();
+        if (!result.success) throw new Error(result.message || 'Erreur serveur');
 
-        this.showNotification('Projet supprimé avec succès', 'success');
-        this.loadSectionData('projects');
-        this.refreshPreview(); // 🔄 Mise à jour après suppression
+        this.showNotification(
+          projectId ? '✅ Projet modifié !' : '✅ Projet ajouté !',
+          'success'
+        );
+        releaseGalleryPreviews();
+        overlay.remove();
+        await this.loadProjectsSection();
+        this.refreshPreview?.();
 
-    } catch (error) {
-        console.error('Error deleting project:', error);
-        this.showNotification('Erreur lors de la suppression: ' + error.message, 'error');
+      } catch (err) {
+        this.showNotification('❌ ' + err.message, 'error');
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> Enregistrer';
+        saveBtn.disabled  = false;
+      }
+    });
+  }
+
+  async deleteProject(id) {
+    if (!confirm('Supprimer ce projet définitivement ?')) return;
+    try {
+      const res    = await fetch(`${this.apiBase}/content/projects/${id}`, {
+        method:  'DELETE',
+        headers: { 'Authorization': `Bearer ${sessionStore.getItem('akime_token')}` }
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.success !== true)
+        throw new Error(result.message || `Erreur ${res.status}`);
+      this.showNotification(
+        result.alreadyGone ? 'ℹ️ Projet déjà supprimé.' : '✅ Projet supprimé.',
+        'success'
+      );
+      await this.loadProjectsSection();
+      this.refreshPreview?.();
+    } catch (err) {
+      console.error('deleteProject error:', err);
+      this.showNotification('❌ ' + err.message, 'error');
     }
-}
+  }
+
 
 
 // ✅ Show full message AND mark as read
 async showFullMessage(messageId) {
     try {
-        const token = localStorage.getItem("akime_token");
+        const token = sessionStore.getItem("akime_token");
         if (!token) {
             this.showNotification("Non autorisé. Veuillez vous reconnecter.", "error");
             return;
@@ -2328,7 +2510,7 @@ async deleteMessage(messageId) {
     if (!confirm("Voulez-vous vraiment supprimer ce message ?")) return;
 
     try {
-        const token = localStorage.getItem("akime_token");
+        const token = sessionStore.getItem("akime_token");
         if (!token) {
             this.showNotification("Non autorisé. Veuillez vous reconnecter.", "error");
             return;
@@ -2452,27 +2634,21 @@ async deleteMessage(messageId) {
                 <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Nom *</label>
                 <input type="text" id="testimonialName" value="${testimonial.name || ''}" required 
                        style="width: 100%; padding: 12px 15px; border: 2px solid #e1e5e9; border-radius: 8px; 
-                              font-size: 16px; transition: border-color 0.3s ease;"
-                       onfocus="this.style.borderColor='#0056b3'; this.style.boxShadow='0 0 0 3px rgba(0,86,179,0.1)'"
-                       onblur="this.style.borderColor='#e1e5e9'; this.style.boxShadow='none'">
+                              font-size: 16px; transition: border-color 0.3s ease;">
             </div>
 
             <div class="form-group" style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Entreprise</label>
                 <input type="text" id="testimonialCompany" value="${testimonial.company || ''}"
                        style="width: 100%; padding: 12px 15px; border: 2px solid #e1e5e9; border-radius: 8px; 
-                              font-size: 16px; transition: border-color 0.3s ease;"
-                       onfocus="this.style.borderColor='#0056b3'; this.style.boxShadow='0 0 0 3px rgba(0,86,179,0.1)'"
-                       onblur="this.style.borderColor='#e1e5e9'; this.style.boxShadow='none'">
+                              font-size: 16px; transition: border-color 0.3s ease;">
             </div>
 
             <div class="form-group" style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333;">Message *</label>
                 <textarea id="testimonialMessage" rows="4" required 
                           style="width: 100%; padding: 12px 15px; border: 2px solid #e1e5e9; border-radius: 8px; 
-                                 font-size: 16px; transition: border-color 0.3s ease; resize: vertical; min-height: 120px;"
-                          onfocus="this.style.borderColor='#0056b3'; this.style.boxShadow='0 0 0 3px rgba(0,86,179,0.1)'"
-                          onblur="this.style.borderColor='#e1e5e9'; this.style.boxShadow='none'">${testimonial.message || ''}</textarea>
+                                 font-size: 16px; transition: border-color 0.3s ease; resize: vertical; min-height: 120px;">${testimonial.message || ''}</textarea>
             </div>
 
             <div class="form-group" style="margin-bottom: 25px;">
@@ -2480,9 +2656,7 @@ async deleteMessage(messageId) {
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <input type="number" id="testimonialRating" value="${testimonial.rating || 5}" min="1" max="5"
                            style="width: 80px; padding: 12px 15px; border: 2px solid #e1e5e9; border-radius: 8px; 
-                                  font-size: 16px; transition: border-color 0.3s ease;"
-                           onfocus="this.style.borderColor='#0056b3'; this.style.boxShadow='0 0 0 3px rgba(0,86,179,0.1)'"
-                           onblur="this.style.borderColor='#e1e5e9'; this.style.boxShadow='none'">
+                                  font-size: 16px; transition: border-color 0.3s ease;">
                     <div style="font-size: 18px; color: #ffb400; margin-left: 10px;">
                         ${'⭐'.repeat(testimonial.rating || 5)}
                     </div>
@@ -2495,16 +2669,12 @@ async deleteMessage(messageId) {
             <div class="form-actions" style="display: flex; gap: 15px; justify-content: flex-end; padding-top: 20px; border-top: 1px solid #e9ecef;">
                 <button type="button" class="modal-close" 
                         style="padding: 12px 24px; border: 2px solid #e1e5e9; background: white; color: #666; 
-                               border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.3s ease;"
-                        onmouseover="this.style.borderColor='#0056b3'; this.style.color='#0056b3'" 
-                        onmouseout="this.style.borderColor='#e1e5e9'; this.style.color='#666'">
+                               border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.3s ease;">
                     Annuler
                 </button>
                 <button type="button" id="saveTestimonialBtn"
                         style="padding: 12px 24px; border: none; background: linear-gradient(135deg, #0056b3, #004a99); 
-                               color: white; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.3s ease;"
-                        onmouseover="this.style.background='linear-gradient(135deg, #004a99, #003366)'; this.style.transform='translateY(-2px)'"
-                        onmouseout="this.style.background='linear-gradient(135deg, #0056b3, #004a99)'; this.style.transform='translateY(0)'">
+                               color: white; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.3s ease;">
                     <i class="fas fa-save" style="margin-right: 8px;"></i>
                     ${testimonial._id ? 'Modifier' : 'Enregistrer'}
                 </button>
@@ -2873,7 +3043,7 @@ async saveTestimonial(modal, testimonialId = null) {
             : '/api/content/equipment';
 
         const method = equipmentId ? 'PUT' : 'POST';
-        const token = localStorage.getItem("akime_token");
+        const token = sessionStore.getItem("akime_token");
 
         if (!token) {
             throw new Error("Aucun token trouvé - connectez-vous d'abord");
@@ -2960,246 +3130,6 @@ async saveTestimonial(modal, testimonialId = null) {
             }, 300);
         }, 3000);
     }
-
-    getProjectForm(project = {}) {
-    // Safe date formatting
-    const formatDateForInput = (date) => {
-        if (!date) return '';
-        
-        try {
-            // If it's already a string in ISO format
-            if (typeof date === 'string' && date.includes('T')) {
-                return date.split('T')[0];
-            }
-            
-            // If it's a Date object
-            if (date instanceof Date) {
-                return date.toISOString().split('T')[0];
-            }
-            
-            // If it's a timestamp or other format
-            const dateObj = new Date(date);
-            if (!isNaN(dateObj.getTime())) {
-                return dateObj.toISOString().split('T')[0];
-            }
-            
-            return '';
-        } catch (error) {
-            console.error('Date formatting error:', error);
-            return '';
-        }
-    };
-
-    return `
-        <form id="projectEditForm" enctype="multipart/form-data" 
-              style="max-width: 700px; margin: auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
-            
-            <!-- Titre -->
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">Titre du projet</label>
-                <input type="text" id="projectTitle" name="title" value="${project.title || ''}" 
-                    required style="width: 100%; padding: 12px 14px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; transition: border 0.3s;">
-            </div>
-
-            <!-- Catégorie -->
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">Catégorie</label>
-                <select id="projectCategory" name="category" required 
-                    style="width: 100%; padding: 12px 14px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px;">
-                    <option value="">-- Choisir une catégorie --</option>
-                    <option value="civil" ${project.category === 'civil' ? 'selected' : ''}>Génie Civil</option>
-                    <option value="metal" ${project.category === 'metal' ? 'selected' : ''}>Métallique</option>
-                    <option value="renovation" ${project.category === 'renovation' ? 'selected' : ''}>Rénovation</option>
-                    <option value="other" ${project.category === 'other' ? 'selected' : ''}>Autres</option>
-                </select>
-            </div>
-
-            <!-- Localisation -->
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">Localisation</label>
-                <input type="text" id="projectLocation" name="location" value="${project.location || ''}" 
-                    style="width: 100%; padding: 12px 14px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px;">
-            </div>
-
-            <!-- Date - FIXED THIS SECTION -->
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">Date du projet</label>
-                <input type="date" id="projectDate" name="date" value="${formatDateForInput(project.date)}" 
-                    style="width: 100%; padding: 12px 14px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px;">
-            </div>
-
-            <!-- Client -->
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">Client</label>
-                <input type="text" id="projectClient" name="client" value="${project.client || ''}" 
-                    style="width: 100%; padding: 12px 14px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px;">
-            </div>
-
-            <!-- Image principale -->
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">Image principale</label>
-                <input type="file" id="projectImage" name="image" accept="image/*" 
-                    style="display:block; margin-top:8px;">
-                ${project.imageUrl ? `<img src="${project.imageUrl}" style="max-width:150px; margin-top:10px; border-radius:6px; border:1px solid #ddd;">` : ''}
-            </div>
-
-            <!-- Galerie - SAFER GALLERY HANDLING -->
-            <div class="form-group" style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">Galerie d'images (max 10)</label>
-                <input type="file" id="projectGallery" name="gallery" multiple accept="image/*" 
-                    style="display:block; margin-top:8px;">
-                <div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px;">
-                    ${project.gallery && Array.isArray(project.gallery) && project.gallery.length 
-                        ? project.gallery.map(img => 
-                            img ? `<img src="${img}" style="max-width:90px; height:70px; object-fit:cover; border-radius:4px; border:1px solid #ddd;">` : ''
-                        ).join('') 
-                        : ''}
-                </div>
-            </div>
-
-            <!-- Description -->
-            <div class="form-group" style="margin-bottom: 25px;">
-                <label style="display: block; margin-bottom: 6px; font-weight: 600; color: #333;">Description</label>
-                <textarea id="projectDescription" name="description" rows="4" required 
-                    style="width: 100%; padding: 12px 14px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; resize: vertical;">${project.description || ''}</textarea>
-            </div>
-
-            <!-- Boutons -->
-            <div class="form-actions" style="display: flex; justify-content: flex-end; gap: 12px;">
-                <button type="button" class="modal-close" 
-                    style="padding: 10px 20px; background:#fff; border:1px solid #ccc; border-radius:6px; cursor:pointer; font-weight:500;">
-                    Annuler
-                </button>
-                <button type="button" id="saveProjectBtn" 
-                    style="padding: 10px 22px; border:none; background: linear-gradient(135deg, #0056b3, #004a99); color:white; border-radius:6px; cursor:pointer; font-weight:600;">
-                    <i class="fas fa-save"></i> Enregistrer
-                </button>
-            </div>
-        </form>
-    `;
-}
-
-    async saveProject(modal, projectId = null) {
-    // Champs texte
-    const title       = modal.querySelector('#projectTitle')?.value || "";
-    const category    = modal.querySelector('#projectCategory')?.value || "";
-    const location    = modal.querySelector('#projectLocation')?.value || "";
-    const date        = modal.querySelector('#projectDate')?.value || "";
-    const client      = modal.querySelector('#projectClient')?.value || "";
-    const description = modal.querySelector('#projectDescription')?.value || "";
-
-    if (!title || !description || !category) {
-        this.showNotification('Veuillez remplir tous les champs obligatoires', 'error');
-        return;
-    }
-
-    // File size validation - ADDED THIS SECTION
-    const mainImage = modal.querySelector('#projectImage')?.files[0];
-    if (mainImage && !this.validateFileSize(mainImage, 100)) {
-        return;
-    }
-
-    const galleryFiles = modal.querySelector('#projectGallery')?.files;
-    if (galleryFiles && galleryFiles.length > 0) {
-        for (const file of galleryFiles) {
-            if (!this.validateFileSize(file, 100)) {
-                return;
-            }
-        }
-    }
-
-    // Construire FormData
-    const formData = new FormData();
-    formData.append("title", title);
-    formData.append("category", category);
-    formData.append("location", location);
-    formData.append("date", date);
-    formData.append("client", client);
-    formData.append("description", description);
-
-    // Image principale
-    if (mainImage) {
-        formData.append("image", mainImage);
-    }
-
-    // Galerie
-    if (galleryFiles && galleryFiles.length > 0) {
-        Array.from(galleryFiles).forEach(file => {
-            formData.append("gallery", file);
-        });
-    }
-
-    try {
-        const saveBtn = modal.querySelector('#saveProjectBtn');
-        const originalText = saveBtn.innerHTML;
-        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enregistrement...';
-        saveBtn.disabled = true;
-
-        const url = projectId 
-            ? `/api/content/projects/${projectId}` 
-            : '/api/content/projects';
-        const method = projectId ? 'PUT' : 'POST';
-        const token = localStorage.getItem("akime_token");
-
-        const res = await fetch(url, {
-            method,
-            headers: {
-                "Authorization": `Bearer ${token}`
-            },
-            body: formData
-        });
-
-        // Check if response is OK before trying to parse JSON
-        if (!res.ok) {
-            let errorMessage = `Erreur serveur (${res.status})`;
-            try {
-                const errorData = await res.json();
-                errorMessage = errorData.message || errorMessage;
-            } catch (e) {
-                // If we can't parse JSON, use the status text
-                errorMessage = res.statusText || errorMessage;
-            }
-            throw new Error(errorMessage);
-        }
-
-        const result = await res.json();
-
-        // Rafraîchir l'UI
-        this.closeModal(modal);
-        this.loadSectionData('projects');
-        this.showNotification(
-            projectId ? 'Projet modifié avec succès!' : 'Projet ajouté avec succès!', 
-            'success'
-        );
-
-    } catch (error) {
-        console.error('Error saving project:', error);
-        this.showNotification(`Erreur lors de la sauvegarde: ${error.message}`, 'error');
-    } finally {
-        const saveBtn = modal.querySelector('#saveProjectBtn');
-        if (saveBtn) {
-            saveBtn.innerHTML = '<i class="fas fa-save"></i> Enregistrer';
-            saveBtn.disabled = false;
-        }
-    }
-}
-
-// ADD THIS HELPER METHOD TO YOUR AdminDashboard CLASS
-validateFileSize(file, maxSizeMB = 100) {
-    const maxSizeBytes = maxSizeMB * 1024 * 1024;
-    if (file.size > maxSizeBytes) {
-        this.showNotification(`Le fichier "${file.name}" est trop grand (max ${maxSizeMB}MB)`, 'error');
-        return false;
-    }
-    return true;
-}
-
-    getServiceForm(service = {}) { return ''; } // logic moved to showServiceForm
-
-async saveService(modal, serviceId = null) { } // logic moved to showServiceForm
-
-
-
 
     // Preview functionality
     initializePreview() {
@@ -3292,7 +3222,7 @@ refreshPreview() {
 // --- Unread badge + message count updater ---
 async function updateUnreadBadge() {
   try {
-    const token = localStorage.getItem('akime_token');
+    const token = sessionStore.getItem('akime_token');
     const BASE_URL = window.adminDashboard ? window.adminDashboard.apiBase.replace('/api', '') : '';
     if (!token) {
       showOrHideUnreadBadge(0); // Hide badge if not authenticated

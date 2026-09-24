@@ -15,6 +15,7 @@ const {
   isValidInteger,
   isValidEquipmentCategory,
   isSafeFilename,
+  isAllowedImageBuffer,
   trimString,
   sanitizePlainText,
   STRING_LIMITS
@@ -51,9 +52,22 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage,
-  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 100 * 1024 * 1024 },
+  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024 },
   fileFilter
 });
+
+function verifyImageUploads(req, res, next) {
+  const files = [
+    ...(req.file ? [req.file] : []),
+    ...Object.values(req.files || {}).flat()
+  ];
+  const invalid = files.some(file => {
+    try { return !isAllowedImageBuffer(fs.readFileSync(file.path)); } catch { return true; }
+  });
+  if (!invalid) return next();
+  files.forEach(file => { try { fs.unlinkSync(file.path); } catch {} });
+  return res.status(400).json({ success: false, message: 'Invalid image content' });
+}
 
 function resolveSafeGeneralImage(unsafeUrl) {
   if (!unsafeUrl || typeof unsafeUrl !== 'string') return null;
@@ -145,6 +159,7 @@ router.post(
     { name: 'image', maxCount: 1 },
     { name: 'gallery', maxCount: 10 }
   ]),
+  verifyImageUploads,
   async (req, res) => {
     try {
       const raw = req.body || {};
@@ -231,6 +246,7 @@ router.put(
     { name: 'image', maxCount: 1 },
     { name: 'gallery', maxCount: 10 }
   ]),
+  verifyImageUploads,
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -354,6 +370,7 @@ router.delete('/projects/:id', adminOrEditor(), async (req, res) => {
     }
     const item = await Project.findByIdAndDelete(id);
     if (!item) {
+      // Already deleted — return success so UI cleans up gracefully
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
@@ -361,7 +378,7 @@ router.delete('/projects/:id', adminOrEditor(), async (req, res) => {
     const tryUnlink = (url) => {
       const resolved = resolveSafeGeneralImage(url);
       if (resolved && resolved.startsWith(generalRoot)) {
-        try { fs.unlinkSync(resolved); console.log("🗑 Deleted file:", resolved); } catch {}
+        try { fs.unlinkSync(resolved); } catch {}
       }
     };
 
@@ -370,7 +387,7 @@ router.delete('/projects/:id', adminOrEditor(), async (req, res) => {
 
     res.json({ success: true, message: 'Project deleted' });
   } catch (err) {
-    console.error("❌ Delete project error:", err);
+    console.error('❌ Delete project error:', err);
     res.status(400).json({ success: false, message: err.message });
   }
 });
@@ -401,7 +418,7 @@ router.get('/services/:id', async (req, res) => {
   }
 });
 
-router.post('/services', adminOrEditor(), upload.single('image'), async (req, res) => {
+router.post('/services', adminOrEditor(), upload.single('image'), verifyImageUploads, async (req, res) => {
   try {
     const raw = req.body || {};
     const clean = {};
@@ -479,7 +496,7 @@ router.post('/services', adminOrEditor(), upload.single('image'), async (req, re
   }
 });
 
-router.put('/services/:id', adminOrEditor(), upload.single('image'), async (req, res) => {
+router.put('/services/:id', adminOrEditor(), upload.single('image'), verifyImageUploads, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id)) {
@@ -578,16 +595,40 @@ router.put('/services/:id', adminOrEditor(), upload.single('image'), async (req,
 router.delete('/services/:id', adminOrEditor(), async (req, res) => {
   try {
     const { id } = req.params;
+
     if (!isValidObjectId(id)) {
-      return res.status(400).json({ success: false, message: 'Identifiant invalide' });
+      return res.status(400).json({
+        success: false,
+        message: 'Identifiant invalide'
+      });
     }
+
     const item = await Service.findByIdAndDelete(id);
-    if (!item) return res.status(404).json({ success: false, message: 'Service not found' });
+
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Service not found' });
+    }
+
     const resolved = resolveSafeGeneralImage(item.imageUrl);
-    if (resolved) { try { fs.unlinkSync(resolved); } catch {} }
-    res.json({ success: true, message: 'Service deleted' });
+
+    if (resolved) {
+      try {
+        fs.unlinkSync(resolved);
+      } catch {}
+    }
+
+    res.json({
+      success: true,
+      message: 'Service deleted'
+    });
+
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    console.error('DELETE SERVICE ERROR:', err);
+
+    res.status(400).json({
+      success: false,
+      message: err.message
+    });
   }
 });
 
@@ -614,7 +655,7 @@ router.get('/equipment/:id', async (req, res) => {
   }
 });
 
-router.post('/equipment', adminOrEditor(), upload.single('image'), async (req, res) => {
+router.post('/equipment', adminOrEditor(), upload.single('image'), verifyImageUploads, async (req, res) => {
   try {
     const raw = req.body || {};
 
@@ -671,7 +712,7 @@ router.post('/equipment', adminOrEditor(), upload.single('image'), async (req, r
   }
 });
 
-router.put('/equipment/:id', adminOrEditor(), upload.single('image'), async (req, res) => {
+router.put('/equipment/:id', adminOrEditor(), upload.single('image'), verifyImageUploads, async (req, res) => {
   try {
     const { id } = req.params;
     if (!isValidObjectId(id)) {
@@ -759,10 +800,10 @@ router.delete('/equipment/:id', adminOrEditor(), async (req, res) => {
     }
     const equipment = await Equipment.findByIdAndDelete(id);
     if (!equipment) {
-      return res.status(404).json({ success: false, message: 'Equipment not found' });
+      return res.json({ success: true, message: 'Equipment already deleted', alreadyGone: true });
     }
     const resolved = resolveSafeGeneralImage(equipment.imageUrl);
-    if (resolved) { try { fs.unlinkSync(resolved); console.log('🗑 Image deleted with equipment:', resolved); } catch {} }
+    if (resolved) { try { fs.unlinkSync(resolved); } catch {} }
     res.json({ success: true, message: 'Equipment deleted' });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -839,7 +880,7 @@ router.put('/company', adminOrEditor(), async (req,res)=>{
 });
 
 // ---- File Upload ----
-router.post('/upload', adminOrEditor(), upload.single('file'), async (req, res) => {
+router.post('/upload', adminOrEditor(), upload.single('file'), verifyImageUploads, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'No file uploaded' });

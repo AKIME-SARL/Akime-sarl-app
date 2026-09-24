@@ -7,23 +7,26 @@
 
 document.addEventListener('DOMContentLoaded', () => {
 
+  document.getElementById('discoverBtn')?.addEventListener('click', () => {
+    document.getElementById('stats')?.scrollIntoView({ behavior: 'smooth' });
+  });
+
   // ── Authentication state management ────────────────────────────
   function isAuthenticated() {
-    return !!localStorage.getItem('akime_token');
+    return !!sessionStorage.getItem('akime_token');
   }
 
   function getCurrentUser() {
     try {
-      return JSON.parse(localStorage.getItem('akime_user'));
+      return JSON.parse(sessionStorage.getItem('akime_user'));
     } catch (e) {
       return null;
     }
   }
 
   function logout() {
-    localStorage.removeItem('akime_token');
-    localStorage.removeItem('akime_refresh_token');
-    localStorage.removeItem('akime_user');
+    sessionStorage.removeItem('akime_token');
+    sessionStorage.removeItem('akime_user');
     updateNavForAuth();
     window.location.reload();
   }

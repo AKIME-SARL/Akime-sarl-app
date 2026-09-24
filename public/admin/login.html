@@ -17,9 +17,11 @@
 <div class="admin-login-wrap">
   <div class="admin-login-card">
     <div class="admin-login-logo">
-      <img src="../images/logo.png" alt="A-KIME Logo" style="width: 80px; height: auto; margin: 0 auto 12px; display: block;">
-      <div style="font-size:1.4rem;font-weight:900;color:var(--navy);">A-KIME</div>
-      <div style="font-size:.7rem;font-weight:700;letter-spacing:.12em;color:var(--gold);margin-bottom:4px;">SARL</div>
+      <img src="../images/logo.png" alt="A-KIME Logo">
+      <div class="admin-login-logo-text">
+        <div class="admin-login-logo-name">A-KIME</div>
+        <div class="admin-login-logo-subtitle">SARL</div>
+      </div>
     </div>
     <div class="admin-login-title">Espace Administration</div>
     <div class="admin-login-sub">Connectez-vous pour gérer votre site</div>
@@ -53,7 +55,7 @@
 
 <script>
   // Redirect if already logged in
-  if (localStorage.getItem('akime_token')) {
+  if (sessionStorage.getItem('akime_token')) {
     window.location.replace('dashboard.html');
   }
 
@@ -84,9 +86,8 @@
       const data = await res.json();
 
       if (data.success && data.data?.accessToken) {
-        localStorage.setItem('akime_token',         data.data.accessToken);
-        localStorage.setItem('akime_refresh_token', data.data.refreshToken || '');
-        localStorage.setItem('akime_user',          JSON.stringify(data.data.user || {}));
+        sessionStorage.setItem('akime_token', data.data.accessToken);
+        sessionStorage.setItem('akime_user', JSON.stringify(data.data.user || {}));
         window.location.replace('dashboard.html');
       } else {
         throw new Error(data.message || 'Identifiants incorrects');

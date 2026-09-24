@@ -14,6 +14,12 @@ const Testimonial = require('../api/models/Testimonial');
 
 const COLLECTIONS = { User, Project, Service, Equipment, Company, Message, Testimonial };
 
+function backupSafeDocument(name, doc) {
+  if (name !== 'User') return doc;
+  const { refreshTokens, passwordResetToken, passwordResetExpires, twoFactorSecret, ...safe } = doc;
+  return safe;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -65,7 +71,7 @@ async function run() {
   // ── Dump each collection ────────────────────────────────────────────────────
   for (const [name, Model] of Object.entries(COLLECTIONS)) {
     try {
-      const docs  = await Model.find({}).lean();
+      const docs  = (await Model.find({}).lean()).map(doc => backupSafeDocument(name, doc));
       const file  = path.join(backupDir, `${name}.json`);
       fs.writeFileSync(file, JSON.stringify(docs, null, 2), 'utf8');
       manifest.collections[name] = { count: docs.length, file: `${name}.json` };

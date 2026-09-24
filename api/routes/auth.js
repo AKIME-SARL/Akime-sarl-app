@@ -17,12 +17,40 @@ const {
   isValidStringLength,
   isValidInteger,
   isValidRole,
+  isSafeFilename,
   trimString,
   sanitizePlainText,
+  isAllowedImageBuffer,
   STRING_LIMITS,
   VALID_AUDIT_RESOURCES,
   VALID_AUDIT_ACTIONS
 } = require('../utils/validation');
+
+const REFRESH_COOKIE = 'akime_refresh';
+const refreshCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict',
+  path: '/api/auth',
+  maxAge: jwtUtils.getExpiryTime(process.env.JWT_REFRESH_EXPIRES_IN || '7d')
+});
+
+function readCookie(req, name) {
+  const encoded = (req.headers.cookie || '').split(';').map(v => v.trim())
+    .find(v => v.startsWith(`${name}=`));
+  return encoded ? decodeURIComponent(encoded.slice(name.length + 1)) : null;
+}
+
+function storeRefreshToken(user, refreshToken, req) {
+  user.refreshTokens.push({
+    tokenHash: jwtUtils.hashToken(refreshToken),
+    expiresAt: new Date(Date.now() + jwtUtils.getExpiryTime(process.env.JWT_REFRESH_EXPIRES_IN || '7d')),
+    userAgent: req.headers['user-agent'] || 'Unknown',
+    ipAddress: req.ip || req.connection.remoteAddress
+  });
+  // Bound session records to avoid unbounded growth.
+  user.refreshTokens = user.refreshTokens.slice(-10);
+}
 
 // Multer storage for avatars
 const avatarStorage = multer.diskStorage({
@@ -56,6 +84,15 @@ const avatarUpload = multer({
     }
   }
 });
+
+function verifyAvatarUpload(req, res, next) {
+  if (!req.file) return next();
+  try {
+    if (isAllowedImageBuffer(require('fs').readFileSync(req.file.path))) return next();
+  } catch {}
+  require('fs').unlink(req.file.path, () => {});
+  return res.status(400).json({ success: false, message: 'Invalid image content' });
+}
 
 // Initialize Google OAuth2 Client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -151,15 +188,11 @@ router.post('/register', generalAuthLimiter, async (req, res) => {
 
     const { accessToken, refreshToken, expiresIn } = jwtUtils.generateTokenPair(user);
 
-    const refreshTokenData = {
-      token: refreshToken,
-      expiresAt: new Date(Date.now() + jwtUtils.getExpiryTime('7d')),
-      userAgent: req.headers['user-agent'] || 'Unknown',
-      ipAddress: req.ip || req.connection.remoteAddress
-    };
-    user.refreshTokens.push(refreshTokenData);
+    storeRefreshToken(user, refreshToken, req);
     user.lastLogin = new Date();
     await user.save();
+
+    res.cookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions());
 
     res.status(201).json({
       success: true,
@@ -173,7 +206,6 @@ router.post('/register', generalAuthLimiter, async (req, res) => {
           avatar: user.avatar
         },
         accessToken,
-        refreshToken,
         expiresIn
       }
     });
@@ -286,16 +318,11 @@ router.post('/login', authLimiter, async (req, res) => {
 
     const { accessToken, refreshToken, expiresIn } = jwtUtils.generateTokenPair(user);
 
-    const refreshTokenData = {
-      token: refreshToken,
-      expiresAt: new Date(Date.now() + jwtUtils.getExpiryTime('7d')),
-      userAgent: req.headers['user-agent'] || 'Unknown',
-      ipAddress: req.ip || req.connection.remoteAddress
-    };
-
-    user.refreshTokens.push(refreshTokenData);
+    storeRefreshToken(user, refreshToken, req);
     user.lastLogin = new Date();
     await user.save();
+
+    res.cookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions());
 
     res.json({
       success: true,
@@ -310,7 +337,6 @@ router.post('/login', authLimiter, async (req, res) => {
           twoFactorEnabled: user.twoFactorEnabled
         },
         accessToken,
-        refreshToken,
         expiresIn
       }
     });
@@ -357,23 +383,27 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
     });
 
     const payload = ticket.getPayload();
+    if (!payload.email || payload.email_verified !== true) {
+      return res.status(401).json({ success: false, message: 'A verified Google email is required' });
+    }
     const googleId = payload['sub'];
     const email = payload['email'];
     const name = payload['name'] || payload['given_name'] + ' ' + payload['family_name'];
     const picture = payload['picture'] || null;
 
-    let user = await User.findOne({ googleId });
+    let user = await User.findOne({ googleId }).select('+twoFactorSecret');
 
     if (!user) {
-      user = await User.findOne({ email });
+      user = await User.findOne({ email }).select('+twoFactorSecret');
 
       if (user) {
-        user.googleId = googleId;
-        user.googleProfile = payload;
-        if (picture && !user.avatar) user.avatar = picture;
+        // Do not silently attach a new identity provider to a password account.
+        // Linking must be an explicit, recently authenticated account action.
+        return res.status(409).json({ success: false, message: 'This email already has an account. Sign in with its existing method first.' });
       } else {
-        const cleanName = isValidStringLength(name, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)
-          ? name
+        const sanitizedName = sanitizePlainText(trimString(name));
+        const cleanName = isValidStringLength(sanitizedName, STRING_LIMITS.NAME_MIN, STRING_LIMITS.NAME_MAX)
+          ? sanitizedName
           : 'Google User';
         const cleanEmail = email && isValidEmail(email) ? email.toLowerCase() : googleId + '@invalid.google';
 
@@ -391,20 +421,22 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
       user.googleProfile = payload;
     }
 
+    if (!user.isActive || user.isLocked) {
+      return res.status(401).json({ success: false, message: 'Account is unavailable' });
+    }
+    if (user.twoFactorEnabled) {
+      return res.status(401).json({ success: false, message: 'Use password login to complete two-factor authentication' });
+    }
+
     user.lastLogin = new Date();
     await user.save();
 
     const { accessToken, refreshToken, expiresIn } = jwtUtils.generateTokenPair(user);
 
-    const refreshTokenData = {
-      token: refreshToken,
-      expiresAt: new Date(Date.now() + jwtUtils.getExpiryTime('7d')),
-      userAgent: req.headers['user-agent'] || 'Unknown',
-      ipAddress: req.ip || req.connection.remoteAddress
-    };
-
-    user.refreshTokens.push(refreshTokenData);
+    storeRefreshToken(user, refreshToken, req);
     await user.save();
+
+    res.cookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions());
 
     res.json({
       success: true,
@@ -419,7 +451,6 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
           twoFactorEnabled: user.twoFactorEnabled
         },
         accessToken,
-        refreshToken,
         expiresIn
       }
     });
@@ -440,7 +471,7 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
  */
 router.post('/refresh', generalAuthLimiter, async (req, res) => {
   try {
-    let { refreshToken } = req.body;
+    let refreshToken = readCookie(req, REFRESH_COOKIE);
 
     if (refreshToken !== undefined && refreshToken !== null) {
       refreshToken = trimString(String(refreshToken));
@@ -480,8 +511,9 @@ router.post('/refresh', generalAuthLimiter, async (req, res) => {
     }
 
     // Check if refresh token exists and is valid
-    const tokenIndex = user.refreshTokens.findIndex(
-      rt => rt.token === refreshToken && rt.expiresAt > new Date()
+    const refreshTokenHash = jwtUtils.hashToken(refreshToken);
+    const tokenIndex = user.refreshTokens.findIndex(rt =>
+      rt.tokenHash === refreshTokenHash && rt.expiresAt > new Date()
     );
 
     if (tokenIndex === -1) {
@@ -491,8 +523,13 @@ router.post('/refresh', generalAuthLimiter, async (req, res) => {
       });
     }
 
-    // Generate new access token
-    const { accessToken, expiresIn } = jwtUtils.generateTokenPair(user);
+    // Rotate the refresh token. A stolen token becomes useless after the next
+    // legitimate refresh instead of remaining valid for its entire lifetime.
+    user.refreshTokens.splice(tokenIndex, 1);
+    const { accessToken, refreshToken: nextRefreshToken, expiresIn } = jwtUtils.generateTokenPair(user);
+    storeRefreshToken(user, nextRefreshToken, req);
+    await user.save();
+    res.cookie(REFRESH_COOKIE, nextRefreshToken, refreshCookieOptions());
 
     res.json({
       success: true,
@@ -519,7 +556,7 @@ router.post('/refresh', generalAuthLimiter, async (req, res) => {
  */
 router.post('/logout', authenticated(), async (req, res) => {
   try {
-    let { refreshToken } = req.body;
+    let refreshToken = readCookie(req, REFRESH_COOKIE);
     const userId = req.user.id;
 
     if (refreshToken !== undefined && refreshToken !== null) {
@@ -531,11 +568,11 @@ router.post('/logout', authenticated(), async (req, res) => {
 
     const user = await User.findById(userId);
     if (user && refreshToken) {
-      user.refreshTokens = user.refreshTokens.filter(
-        rt => rt.token !== refreshToken
-      );
+      const refreshTokenHash = jwtUtils.hashToken(refreshToken);
+      user.refreshTokens = user.refreshTokens.filter(rt => rt.tokenHash !== refreshTokenHash);
       await user.save();
     }
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
 
     res.json({
       success: true,
@@ -587,6 +624,7 @@ router.post('/logout-all', authenticated(), sensitiveOperation, async (req, res)
       user.refreshTokens = [];
       await user.save();
     }
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
 
     res.json({
       success: true,
@@ -640,7 +678,7 @@ router.get('/me', authenticated(), async (req, res) => {
  * @desc    Upload user avatar
  * @access  Private
  */
-router.post('/me/avatar', authenticated(), avatarUpload.single('avatar'), auditLog('UPDATE', 'USER'), async (req, res) => {
+router.post('/me/avatar', authenticated(), avatarUpload.single('avatar'), verifyAvatarUpload, auditLog('UPDATE', 'USER'), async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) {
@@ -775,12 +813,10 @@ router.put('/me', authenticated(), auditLog('UPDATE', 'USER'), async (req, res) 
     if (avatar !== undefined) {
       if (avatar === null || avatar === '') {
         update.avatar = null;
-      } else if (typeof avatar === 'string' && isValidStringLength(avatar, 0, STRING_LIMITS.SHORT_TEXT_MAX)) {
-        update.avatar = avatar;
       } else {
         return res.status(400).json({
           success: false,
-          message: 'URL avatar invalide'
+          message: 'Use the avatar upload endpoint to change your avatar'
         });
       }
     }

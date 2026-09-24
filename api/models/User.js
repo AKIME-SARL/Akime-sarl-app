@@ -75,7 +75,9 @@ const UserSchema = new mongoose.Schema({
     default: null
   },
   refreshTokens: [{
-    token: String,
+    // Store a one-way digest, never a bearer token that can be replayed from a
+    // database dump or backup.
+    tokenHash: String,
     createdAt: { type: Date, default: Date.now },
     expiresAt: Date,
     userAgent: String,

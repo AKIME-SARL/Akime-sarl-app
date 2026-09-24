@@ -1,109 +1,153 @@
 require('dotenv').config();
-// Clean restart
-const express  = require('express');
-const cors     = require('cors');
-const helmet   = require('helmet');
-const rateLimit = require('express-rate-limit');
-const morgan   = require('morgan');
-const path     = require('path');
-const fs       = require('fs').promises;
+const express       = require('express');
+const cors          = require('cors');
+const helmet        = require('helmet');
+const rateLimit     = require('express-rate-limit');
+const morgan        = require('morgan');
+const path          = require('path');
+const fs            = require('fs').promises;
 const mongoSanitize = require('express-mongo-sanitize');
-const xss = require('xss-clean');
-const dbConnection = require('./api/utils/database');
+const xss           = require('xss-clean');
+const dbConnection  = require('./api/utils/database');
+const { isSafeFilename } = require('./api/utils/validation');
 
-// ── Uncaught exception and unhandled rejection handlers ───────────────────────
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err);
-  console.error(err.stack);
-  // Don't exit immediately, keep server running if possible
-});
+// ── Crash handlers ────────────────────────────────────────────
+process.on('uncaughtException',  (err) => console.error('❌ Uncaught Exception:', err.message));
+process.on('unhandledRejection', (reason) => console.error('❌ Unhandled Rejection:', reason?.message || reason));
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  console.error(reason.stack);
-});
-
-const { MONGODB_URI, PORT = 4001, ORIGIN, NODE_ENV } = process.env;
+const { MONGODB_URI, PORT = 4000, ORIGIN, NODE_ENV } = process.env;
+const isProd = NODE_ENV === 'production';
+const trustProxy = process.env.TRUST_PROXY === 'true';
 
 const app = express();
+if (trustProxy) app.set('trust proxy', 1);
 
-// ── Upload dirs ───────────────────────────────────────────────────────────────
-async function createUploadsDir() {
-  const dirs = ['uploads', 'uploads/projects', 'uploads/equipment', 'uploads/services', 'uploads/general'];
-  for (const d of dirs) {
-    await fs.mkdir(path.join(__dirname, d), { recursive: true });
+function validateSecurityConfiguration() {
+  const minSecretLength = 64;
+  if (!MONGODB_URI) throw new Error('MONGODB_URI must be configured');
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < minSecretLength) {
+    throw new Error(`JWT_SECRET must be at least ${minSecretLength} characters`);
   }
+  if (!process.env.JWT_REFRESH_SECRET || process.env.JWT_REFRESH_SECRET.length < minSecretLength) {
+    throw new Error(`JWT_REFRESH_SECRET must be at least ${minSecretLength} characters`);
+  }
+  if (isProd) {
+    if (!ORIGIN || ORIGIN.split(',').some(origin => !origin.trim().startsWith('https://'))) {
+      throw new Error('Production ORIGIN must contain only HTTPS origins');
+    }
+    if (!trustProxy) {
+      throw new Error('Set TRUST_PROXY=true when production TLS terminates at a trusted reverse proxy');
+    }
+  }
+}
+
+// ── Upload dirs ───────────────────────────────────────────────
+async function createUploadsDir() {
+  const dirs = ['uploads','uploads/projects','uploads/equipment','uploads/services','uploads/general','uploads/images'];
+  for (const d of dirs) await fs.mkdir(path.join(__dirname, d), { recursive: true });
   console.log('✅ Uploads directory exists');
 }
 createUploadsDir();
 
-// ── HTTPS Enforcement ─────────────────────────────────────────────────────────
+// ── HTTPS redirect (production only) ─────────────────────────
 app.use((req, res, next) => {
-  if (NODE_ENV === 'production' && !req.secure && req.get('x-forwarded-proto') !== 'https') {
-    return res.redirect(`https://${req.get('host')}${req.url}`);
-  }
+  const isHttps = req.secure || (trustProxy && req.get('x-forwarded-proto') === 'https');
+  if (isProd && !isHttps)
+    return res.redirect(301, `https://${req.get('host')}${req.url}`);
   next();
 });
 
-// ── Security & middleware ─────────────────────────────────────────────────────
+// ── CORS ─────────────────────────────────────────────────────
+const allowedOrigins = (ORIGIN || 'http://localhost:4000')
+  .split(',').map(o => o.trim()).filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With'],
+}));
+
+// ── Helmet (security headers) ────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'"],
-      styleSrc:   ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com", "https://accounts.google.com"],
-      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdnjs.cloudflare.com", "https://accounts.google.com"],
-      scriptSrcAttr: ["'unsafe-inline'"],
-      fontSrc:    ["'self'", "https://cdnjs.cloudflare.com", "https://fonts.gstatic.com"],
-      imgSrc:     ["'self'", "data:", "https:", "http:", "https://*.googleusercontent.com"],
-      mediaSrc:   ["'self'", "data:"],
-      connectSrc: ["'self'", "https://accounts.google.com"],
-      frameSrc:   ["'self'", "https://accounts.google.com"]
+      defaultSrc:    ["'self'"],
+      styleSrc:      ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
+      // The hashes permit the two existing fixed admin bootstrap scripts
+      // without allowing attacker-controlled inline JavaScript.
+      scriptSrc:     ["'self'", "https://cdnjs.cloudflare.com", "https://accounts.google.com", "'sha256-5YPkBoeUY8ajL6BRlXbFvvPmSg/v6YMCmcDPnm93VC8='", "'sha256-Mhk9O1ym+e30i0Tu9FdJ4WGEK6eC3n68fc+XDA5CkT8='", "'sha256-ZV6X1b4fntwH8HH4urD4qTASc1BvEwgYzXRraRfgrWw='"],
+      scriptSrcAttr: ["'none'"],
+      fontSrc:       ["'self'", "https://cdnjs.cloudflare.com", "https://fonts.gstatic.com"],
+      imgSrc:        ["'self'", "data:", "https:", "http:"],
+      mediaSrc:      ["'self'", "data:"],
+      connectSrc:    ["'self'", "https://accounts.google.com"],
+      frameSrc:      ["'self'", "https://accounts.google.com"],
     }
   },
-  hsts: {
-    maxAge: 31536000, // 1 year in seconds
-    includeSubDomains: true,
-    preload: true
-  }
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 
-// Data sanitization against NoSQL injection
+// ── Sanitization ─────────────────────────────────────────────
 app.use(mongoSanitize());
-// Data sanitization against XSS
 app.use(xss());
 
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ extended: true, limit: '100mb' }));
-app.use(morgan('dev'));
+// ── Body parser — FIX: 100mb → 10mb ─────────────────────────
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ── Static files ──────────────────────────────────────────────────────────────
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// ── Logger ────────────────────────────────────────────────────
+app.use(morgan(isProd ? 'combined' : 'dev'));
+
+// ── Static files ─────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/images', express.static(path.join(__dirname, 'public', 'images')));
+// NOTE: /uploads is NOT served statically — use /api/files/:category/:filename
 
-// ── Granular Rate Limiting ────────────────────────────────────────────────────
-const generalLimiter = rateLimit({ 
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false
+// ── Rate limiters ────────────────────────────────────────────
+const mkLimiter = (max, windowMs = 15*60*1000, msg = 'Too many requests') =>
+  rateLimit({
+    windowMs, max, standardHeaders: true, legacyHeaders: false,
+    keyGenerator: (req) => req.user?.id || req.ip,
+    message: { success: false, message: msg },
+  });
+
+const generalLimiter = mkLimiter(100);
+const strictLimiter  = mkLimiter(50);
+const adminLimiter   = mkLimiter(200);
+
+// ── Secure file serving (/api/files/:category/:filename) ─────
+const UPLOAD_CATEGORIES = ['projects','equipment','services','general','images','avatars'];
+app.get('/api/files/:category/:filename', (req, res) => {
+  const { category, filename } = req.params;
+  if (!UPLOAD_CATEGORIES.includes(category))
+    return res.status(400).json({ success: false, message: 'Invalid category' });
+  if (!isSafeFilename(filename))
+    return res.status(400).json({ success: false, message: 'Invalid filename' });
+  const filePath = path.join(__dirname, 'uploads', category, filename);
+  res.sendFile(filePath, err => {
+    if (err) res.status(404).json({ success: false, message: 'File not found' });
+  });
 });
 
-const strictLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false
+// ── Legacy /uploads static serving (backward compat) ─────────
+// Images stored in DB as /uploads/general/xxx.jpg still work
+app.get('/uploads/:category/:filename', (req, res) => {
+  const { category, filename } = req.params;
+  if (!UPLOAD_CATEGORIES.includes(category) || !isSafeFilename(filename)) {
+    return res.status(400).json({ success: false, message: 'Invalid file path' });
+  }
+  res.sendFile(path.join(__dirname, 'uploads', category, filename), err => {
+    if (err && !res.headersSent) res.status(404).json({ success: false, message: 'File not found' });
+  });
 });
 
-const adminLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500,
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
-// ── API routes (mounted BEFORE page routes and 404 handler) ──────────────────
+// ── API routes ───────────────────────────────────────────────
 const authRoutes         = require('./api/routes/auth');
 const contentRoutes      = require('./api/routes/content');
 const contactRoutes      = require('./api/routes/contact');
@@ -112,27 +156,25 @@ const adminRoutes        = require('./api/routes/admin');
 
 app.use('/api/auth',         authRoutes);
 app.use('/api/content',      generalLimiter, contentRoutes);
-app.use('/api/contact',      strictLimiter, contactRoutes);
-app.use('/api/testimonials', strictLimiter, testimonialsRoutes);
-app.use('/api/admin',        adminLimiter, adminRoutes);
+app.use('/api/contact',      strictLimiter,  contactRoutes);
+app.use('/api/testimonials', strictLimiter,  testimonialsRoutes);
+app.use('/api/admin',        adminLimiter,   adminRoutes);
 
-// ── Admin pages ───────────────────────────────────────────────────────────────
+// ── Admin pages ──────────────────────────────────────────────
 app.get('/admin',           (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'login.html')));
 app.get('/admin/login',     (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'login.html')));
 app.get('/admin/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'dashboard.html')));
 
-// ── Public pages ──────────────────────────────────────────────────────────────
+// ── Public pages ─────────────────────────────────────────────
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// Redirect removed public pages (login / signup / welcome) → index
-app.get('/login',   (req, res) => res.redirect(301, '/'));
-app.get('/signup',  (req, res) => res.redirect(301, '/'));
-app.get('/welcome', (req, res) => res.redirect(301, '/'));
-app.get('/login.html',   (req, res) => res.redirect(301, '/'));
-app.get('/signup.html',  (req, res) => res.redirect(301, '/'));
-app.get('/welcome.html', (req, res) => res.redirect(301, '/'));
+// Redirect removed pages
+['login','signup','welcome'].forEach(p => {
+  app.get(`/${p}`,      (req, res) => res.redirect(301, '/'));
+  app.get(`/${p}.html`, (req, res) => res.redirect(301, '/'));
+});
 
-// Any other .html page that doesn't exist → 404 JSON (not index redirect)
+// Dynamic HTML pages
 app.get('/:page.html', (req, res) => {
   const filePath = path.join(__dirname, 'public', `${req.params.page}.html`);
   res.sendFile(filePath, err => {
@@ -140,63 +182,58 @@ app.get('/:page.html', (req, res) => {
   });
 });
 
-// Debug / test routes
-app.get('/test-services', async (req, res) => {
-  const Service = require('./api/models/Service');
-  const services = await Service.find();
-  console.log('Services from DB:', JSON.stringify(services, null, 2));
-  res.json({ success: true, data: services });
-});
-
-// ── Global Error Handler ─────────────────────────────────────────────────
-app.use((err, req, res, next) => {
-  console.error('❌ Server Error:', err);
-  res.status(err.status || 500).json({ 
-    success: false, 
-    message: err.message || 'Internal server error' 
+// FIX: Debug route — REMOVED from production entirely
+if (!isProd) {
+  app.get('/test-services', async (req, res) => {
+    const Service = require('./api/models/Service');
+    const services = await Service.find();
+    res.json({ success: true, count: services.length, data: services });
   });
-});
-
-// ── 404 catch-all (must be LAST) ─────────────────────────────────────────────
-app.use((req, res) => res.status(404).json({ message: 'Not found' }));
-
-// ── Start server ──────────────────────────────────────────────────────────────
-const APP_PORT      = Number(PORT);
-const portsToTry = [4000, 4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008, 4009, 4010];
-let portIndex = 0;
-
-async function startServer() {
-  try {
-    await dbConnection.connect(MONGODB_URI);
-  } catch (err) {
-    console.error('❌ Failed to connect to MongoDB. Server will not start.');
-    process.exit(1);
-  }
-
-  tryNextPort();
 }
 
-function tryNextPort() {
-  if (portIndex >= portsToTry.length) {
-    console.error('❌ All ports are in use. Please free a port and try again.');
+// ── Global error handler — FIX: no leak in production ────────
+app.use((err, req, res, next) => {
+  // Log full error server-side always
+  console.error('❌ Server Error:', err.message);
+  if (!isProd) console.error(err.stack);
+
+  // CORS errors
+  if (err.message && err.message.startsWith('CORS:'))
+    return res.status(403).json({ success: false, message: 'CORS policy violation' });
+
+  // Never expose internal error details to client in production
+  res.status(err.status || 500).json({
+    success: false,
+    message: isProd ? 'An error occurred. Please try again.' : err.message,
+  });
+});
+
+// ── 404 catch-all ─────────────────────────────────────────────
+app.use((req, res) => res.status(404).json({ success: false, message: 'Not found' }));
+
+// ── Start server ──────────────────────────────────────────────
+async function startServer() {
+  try {
+    validateSecurityConfiguration();
+    await dbConnection.connect(MONGODB_URI);
+  } catch (err) {
+    console.error('❌ MongoDB connection failed:', err.message);
     process.exit(1);
-    return;
   }
 
-  const port = portsToTry[portIndex];
-  
-  const server = app.listen(port, () => {
-    console.log(`🚀 A-KIME website running on http://localhost:${port}`);
-  });
+  const port = Number(PORT);
+  const server = app.listen(port, () =>
+    console.log(`🚀 A-KIME running on http://localhost:${port} [${NODE_ENV}]`)
+  );
 
   server.on('error', err => {
     if (err.code === 'EADDRINUSE') {
-      console.warn(`⚠️  Port ${port} in use — trying next port…`);
-      portIndex++;
-      tryNextPort();
-    } else {
-      throw err;
-    }
+      const fallback = port + 1;
+      console.warn(`⚠️  Port ${port} in use — trying ${fallback}`);
+      app.listen(fallback, () =>
+        console.log(`🚀 A-KIME running on http://localhost:${fallback} [${NODE_ENV}]`)
+      );
+    } else throw err;
   });
 }
 

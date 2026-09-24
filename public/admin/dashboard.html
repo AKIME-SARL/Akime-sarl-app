@@ -12,35 +12,33 @@
     <!-- ── Auth guard ────────────────────────────────────────────────────── -->
     <script>
       (function () {
-        const token = localStorage.getItem('akime_token');
+        const storage = sessionStorage;
+        const token = storage.getItem('akime_token');
         if (!token) { window.location.replace('/admin/login'); return; }
         try {
           const payload = JSON.parse(atob(token.split('.')[1]));
           if (Date.now() >= payload.exp * 1000) {
-            const rt = localStorage.getItem('akime_refresh_token');
-            if (!rt) { localStorage.clear(); window.location.replace('/admin/login'); return; }
             fetch('/api/auth/refresh', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refreshToken: rt }),
+              method: 'POST', credentials: 'same-origin',
             }).then(r => r.json()).then(d => {
               if (d.success && d.data.accessToken) {
-                localStorage.setItem('akime_token', d.data.accessToken);
+                storage.setItem('akime_token', d.data.accessToken);
                 fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + d.data.accessToken } })
                   .then(r => r.json()).then(me => {
                     if (!me.success || (me.data.user.role !== 'admin' && me.data.user.role !== 'editor'))
                       window.location.replace('/admin/login');
                   });
-              } else { localStorage.clear(); window.location.replace('/admin/login'); }
-            }).catch(() => { localStorage.clear(); window.location.replace('/admin/login'); });
+              } else { storage.clear(); window.location.replace('/admin/login'); }
+            }).catch(() => { storage.clear(); window.location.replace('/admin/login'); });
           } else {
             fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } })
               .then(r => r.json()).then(d => {
                 if (!d.success || (d.data.user.role !== 'admin' && d.data.user.role !== 'editor'))
                   window.location.replace('/admin/login');
-                else localStorage.setItem('akime_user', JSON.stringify(d.data.user));
+                else storage.setItem('akime_user', JSON.stringify(d.data.user));
               }).catch(() => {});
           }
-        } catch(e) { localStorage.clear(); window.location.replace('/admin/login'); }
+        } catch(e) { storage.clear(); window.location.replace('/admin/login'); }
       })();
     </script>
     <!-- ── End auth guard ────────────────────────────────────────────────── -->
@@ -994,7 +992,7 @@
     <nav class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="sidebar-logo">
-                <img src="/images/logo.png" alt="A-KIME" onerror="this.style.display='none';this.parentElement.innerHTML='<span style=\'font-size:.9rem;font-weight:900;color:#0a1f44;\'>A</span>'">
+                <img src="/images/logo.png" alt="A-KIME">
             </div>
             <div>
                 <div class="sidebar-logo-text">A-KIME</div>
@@ -1290,7 +1288,7 @@
 
   // Populate user info from localStorage (admin.js will override with fresh API data)
   try {
-    const u = JSON.parse(localStorage.getItem('akime_user') || '{}');
+    const u = JSON.parse(sessionStorage.getItem('akime_user') || '{}');
     if (u.name) {
       const initials = u.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
       ['userAvatar','sidebarAvatar'].forEach(id => {
@@ -1312,13 +1310,12 @@
       await fetch('/api/auth/logout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json',
-                   'Authorization': 'Bearer ' + localStorage.getItem('akime_token') },
-        body: JSON.stringify({ refreshToken: localStorage.getItem('akime_refresh_token') })
+                   'Authorization': 'Bearer ' + sessionStorage.getItem('akime_token') },
+        credentials: 'same-origin'
       });
     } catch(e) {}
-    localStorage.removeItem('akime_token');
-    localStorage.removeItem('akime_refresh_token');
-    localStorage.removeItem('akime_user');
+    sessionStorage.removeItem('akime_token');
+    sessionStorage.removeItem('akime_user');
     window.location.replace('/admin/login');
   }
   document.getElementById('logoutBtn').addEventListener('click', doLogout);
