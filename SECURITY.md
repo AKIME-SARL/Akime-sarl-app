@@ -7,9 +7,9 @@
   placeholders and local-development defaults only.
 - Do not put credentials in source code, workflow YAML, issues, pull-request
   text, test fixtures, or logs.
-- The `Secret scan` workflow runs Gitleaks on pull requests, protected-branch
-  pushes, weekly schedules, and on demand. It checks out full history so a
-  historical commit is included in the scan.
+- The `Secret scan` workflow runs the free, open-source Gitleaks CLI on pull
+  requests, protected-branch pushes, weekly schedules, and on demand. It
+  checks out full history so a historical commit is included in the scan.
 
 ## Production configuration
 
@@ -20,10 +20,6 @@ minimum, store these as secrets:
 `MONGODB_URI`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `SESSION_SECRET`,
 `EMAIL_PASS`, and any OAuth client secret.
 
-The repository-level `GITLEAKS_LICENSE` secret is also required for the
-Gitleaks workflow because this repository belongs to an organization. Obtain
-the license from Gitleaks before enabling the workflow on the default branch.
-
 Use Environment variables (rather than secrets) for non-sensitive settings
 such as `NODE_ENV`, `PORT`, `BASE_URL`, `ORIGIN`, and rate limits. The
 deployment workflow or hosting platform must inject these values into the
@@ -31,9 +27,9 @@ application process; GitHub Secrets are not automatically runtime environment
 variables.
 
 Repository administrators should also enable GitHub's native **Secret
-scanning** and **Push protection** under **Settings → Code security and
-analysis**. Those account-level settings cannot be enabled by a repository
-file.
+scanning** and **Push protection** under **Settings → Advanced Security** when
+GitHub Secret Protection is available for the organization. Those account-level
+settings cannot be enabled by a repository file.
 
 ## If a secret is exposed
 
