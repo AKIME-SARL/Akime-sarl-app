@@ -3,7 +3,7 @@ node_modules/
 
 # Environment — NEVER commit
 .env
-.env.example
+!.env.example
 .env.local
 .env.*.local
 
