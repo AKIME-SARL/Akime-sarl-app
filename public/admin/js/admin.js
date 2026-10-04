@@ -197,6 +197,9 @@ class AdminDashboard {
                 case 'projects':
                     await this.loadProjectsSection();
                     break;
+                case 'delivery-projects':
+                    await window.loadDeliveryProjectsSection(this);
+                    break;
                 case 'messages':
                     await this.loadMessagesSection();
                     break;
@@ -1282,10 +1285,12 @@ renderTestimonialsTable(testimonials) {
     async apiCall(endpoint, options = {}) {
         const defaultOptions = {
             headers: {
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${this.token}`
             }
         };
+        if (!(options.body instanceof FormData)) {
+            defaultOptions.headers['Content-Type'] = 'application/json';
+        }
 
         let response = await fetch(endpoint, { ...defaultOptions, ...options });
 
@@ -1322,6 +1327,7 @@ renderTestimonialsTable(testimonials) {
             services: 'Gestion des Services',
             equipment: 'Gestion des Équipements',
             projects: 'Gestion des Projets',
+            'delivery-projects': 'Gestion des Projets Internes',
             messages: 'Messages de Contact',
             testimonials: 'Gestion des Témoignages',
             company: 'Informations de l\'Entreprise',

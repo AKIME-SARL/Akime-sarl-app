@@ -10,6 +10,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const xss           = require('xss-clean');
 const dbConnection  = require('./api/utils/database');
 const { isSafeFilename } = require('./api/utils/validation');
+const { adminOnly } = require('./api/middleware/auth');
 
 // ── Crash handlers ────────────────────────────────────────────
 process.on('uncaughtException',  (err) => console.error('❌ Uncaught Exception:', err.message));
@@ -43,7 +44,7 @@ function validateSecurityConfiguration() {
 
 // ── Upload dirs ───────────────────────────────────────────────
 async function createUploadsDir() {
-  const dirs = ['uploads','uploads/projects','uploads/equipment','uploads/services','uploads/general','uploads/images'];
+  const dirs = ['uploads','uploads/projects','uploads/equipment','uploads/services','uploads/general','uploads/images','uploads/delivery-documents'];
   for (const d of dirs) await fs.mkdir(path.join(__dirname, d), { recursive: true });
   console.log('✅ Uploads directory exists');
 }
@@ -123,16 +124,24 @@ const adminLimiter   = mkLimiter(200);
 
 // ── Secure file serving (/api/files/:category/:filename) ─────
 const UPLOAD_CATEGORIES = ['projects','equipment','services','general','images','avatars'];
+const PRIVATE_UPLOAD_CATEGORIES = ['delivery-documents'];
 app.get('/api/files/:category/:filename', (req, res) => {
   const { category, filename } = req.params;
-  if (!UPLOAD_CATEGORIES.includes(category))
+  const isPrivateCategory = PRIVATE_UPLOAD_CATEGORIES.includes(category);
+  if (!isPrivateCategory && !UPLOAD_CATEGORIES.includes(category))
     return res.status(400).json({ success: false, message: 'Invalid category' });
   if (!isSafeFilename(filename))
     return res.status(400).json({ success: false, message: 'Invalid filename' });
-  const filePath = path.join(__dirname, 'uploads', category, filename);
-  res.sendFile(filePath, err => {
-    if (err) res.status(404).json({ success: false, message: 'File not found' });
-  });
+  const sendFile = () => {
+    const filePath = path.join(__dirname, 'uploads', category, filename);
+    res.sendFile(filePath, {
+      headers: isPrivateCategory ? { 'Cache-Control': 'private, no-store' } : {}
+    }, err => {
+      if (err) res.status(404).json({ success: false, message: 'File not found' });
+    });
+  };
+  if (isPrivateCategory) return adminOnly()(req, res, sendFile);
+  sendFile();
 });
 
 // ── Legacy /uploads static serving (backward compat) ─────────
@@ -153,12 +162,14 @@ const contentRoutes      = require('./api/routes/content');
 const contactRoutes      = require('./api/routes/contact');
 const testimonialsRoutes = require('./api/routes/testimonials');
 const adminRoutes        = require('./api/routes/admin');
+const deliveryProjectsRoutes = require('./api/routes/deliveryProjects');
 
 app.use('/api/auth',         authRoutes);
 app.use('/api/content',      generalLimiter, contentRoutes);
 app.use('/api/contact',      strictLimiter,  contactRoutes);
 app.use('/api/testimonials', strictLimiter,  testimonialsRoutes);
 app.use('/api/admin',        adminLimiter,   adminRoutes);
+app.use('/api/delivery-projects', adminLimiter, deliveryProjectsRoutes);
 
 // ── Admin pages ──────────────────────────────────────────────
 app.get('/admin',           (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'login.html')));

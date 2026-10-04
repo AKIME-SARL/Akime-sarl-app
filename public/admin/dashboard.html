@@ -1018,6 +1018,9 @@
             <a href="#projects"     class="nav-item" data-section="projects">
                 <i class="fas fa-hard-hat"></i><span>Projets</span>
             </a>
+            <a href="#delivery-projects" class="nav-item" data-section="delivery-projects" data-admin-only="true">
+                <i class="fas fa-clipboard-list"></i><span>Projets internes</span>
+            </a>
             <a href="#services"     class="nav-item" data-section="services">
                 <i class="fas fa-concierge-bell"></i><span>Services</span>
             </a>
@@ -1145,6 +1148,12 @@
             <!-- Projects -->
             <section id="projects" class="content-section">
                 <div class="page-title"><i class="fas fa-hard-hat"></i> Projets</div>
+                <div class="loading"><div class="spinner"></div><p>Chargement…</p></div>
+            </section>
+
+            <!-- Private project delivery management; separate from portfolio projects -->
+            <section id="delivery-projects" class="content-section">
+                <div class="page-title"><i class="fas fa-clipboard-list"></i> Projets internes</div>
                 <div class="loading"><div class="spinner"></div><p>Chargement…</p></div>
             </section>
 
@@ -1324,5 +1333,6 @@
 
 <script src="/js/api.js"></script>
 <script src="js/admin.js"></script>
+<script src="js/delivery-projects.js"></script>
 </body>
 </html>
