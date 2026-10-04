@@ -69,6 +69,25 @@ npm start
 3. Aller sur `/admin/login` ou `/admin`
 4. Se connecter — le panel redirige automatiquement les non-admins
 
+## Gestion privée des projets
+
+Les projets de livraison interne sont stockés dans la collection `deliveryprojects`, séparée de `projects` qui reste le portfolio public. La rubrique **Projets internes** du tableau de bord est réservée aux administrateurs. Son API exige également le rôle `admin` pour chaque requête :
+
+| Méthode | Route | Action |
+|---------|-------|--------|
+| `GET` | `/api/delivery-projects` | Lister les projets internes |
+| `GET` | `/api/delivery-projects/:id` | Consulter détails, notes et historique |
+| `POST` | `/api/delivery-projects` | Créer un projet |
+| `PUT` | `/api/delivery-projects/:id` | Modifier les champs, jalons, tâches et documents |
+| `POST` | `/api/delivery-projects/:id/documents` | Importer jusqu'à 10 documents sur un projet |
+| `POST` | `/api/delivery-projects/:id/notes` | Ajouter une note et une entrée d'historique |
+| `DELETE` | `/api/delivery-projects/:id` | Supprimer un projet |
+| `GET` | `/api/delivery-projects/members` | Lister les administrateurs et éditeurs actifs assignables |
+
+Les statuts disponibles sont `BACKLOG`, `PLANNED`, `IN_PROGRESS`, `ON_HOLD`, `COMPLETED` et `CANCELLED`. Le modèle suit aussi la priorité, les affectations, les dates, le budget, le pourcentage d'avancement, les jalons, les tâches, les documents et les références client/projet. Les changements et les notes créent des entrées dans l'historique.
+
+Les documents sont importés en fichiers PDF, DOCX, XLSX, CSV, TXT ou image (JPG, PNG, GIF, WEBP), avec une limite de 20 Mo par fichier par défaut. Ils sont stockés sous `uploads/delivery-documents` et ne peuvent être téléchargés que par un administrateur authentifié.
+
 ## Variables d'environnement
 
 ```env
