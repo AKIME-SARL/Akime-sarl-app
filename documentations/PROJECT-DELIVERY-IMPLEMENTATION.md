@@ -73,3 +73,12 @@ screens and keeps its save controls visible while scrolling.
 - `public/admin/js/admin.js` — section routing.
 - `public/admin/js/delivery-projects.js` — project-delivery admin interface.
 - `README.md` — project-delivery API and setup documentation.
+
+## CI workflow
+
+The repository's CI workflow runs syntax checks and unit tests for Node.js 18,
+20, 22, and 24 on GitHub-hosted Ubuntu runners for pushes to `main` and
+`develop`, pull requests, and manual dispatch. As the repository is private,
+these runs consume the GitHub Actions minutes included in the repository
+owner's plan; usage beyond the included allowance may be billed if additional
+spending is enabled.

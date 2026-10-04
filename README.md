@@ -56,11 +56,33 @@ npm start
 |----------|-------------|
 | `npm start` | Démarrage production |
 | `npm run dev` | Mode développement (nodemon) |
+| `npm test` | Exécuter les tests unitaires Node.js |
 | `npm run fix-admin-roles` | Promouvoir les emails ALLOWED_ADMIN_EMAILS en admin |
 | `npm run seed` | Peupler la base avec des données de démo |
 | `npm run backup` | Sauvegarder toutes les collections MongoDB |
 | `npm run restore` | Restaurer depuis un dossier de backup |
 | `npm run create-admin` | Créer un administrateur interactif |
+
+## Intégration continue gratuite
+
+GitHub Actions exécute les vérifications sur les pushes vers `main` et `develop`,
+les pull requests, ainsi que sur lancement manuel. Le workflow installe les
+dépendances verrouillées, vérifie la syntaxe de tous les fichiers JavaScript et
+lance les tests unitaires sur Node.js 18, 20, 22 et 24 avec des runners
+GitHub-hosted.
+
+Ce dépôt est privé : les exécutions consomment les minutes incluses dans le
+forfait GitHub du propriétaire du dépôt. Elles ne sont donc gratuites que dans
+la limite de l'allocation mensuelle; l'usage au-delà peut être facturé si les
+dépenses Actions sont autorisées. Vérifier **Settings → Billing and licensing →
+Budgets and alerts** pour surveiller l'usage et configurer un budget.
+
+Les tests automatisés ne nécessitent pas de base de données ni de secrets. Les
+tests réels qui nécessitent MongoDB ou des identifiants ne sont donc pas lancés
+dans ce workflow sans service de test dédié.
+
+Le workflow `Secret scan` existant utilise également un runner GitHub-hosted et
+compte dans la même allocation du forfait.
 
 ## Accès admin
 
