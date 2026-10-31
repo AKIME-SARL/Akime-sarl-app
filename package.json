@@ -33,7 +33,7 @@
     "mongoose": "^8.17.1",
     "morgan": "^1.12.1",
     "multer": "^2.4.0",
-    "nodemailer": "10.0.9",
+    "nodemailer": "10.1.4",
     "qrcode": "^1.5.4",
     "speakeasy": "^2.0.0",
     "xss-clean": "^0.1.4"
