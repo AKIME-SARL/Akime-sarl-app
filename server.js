@@ -9,20 +9,58 @@ const fs            = require('fs').promises;
 const mongoSanitize = require('express-mongo-sanitize');
 const xss           = require('xss-clean');
 const dbConnection  = require('./api/utils/database');
+const { createMongoRateLimitStore, initializeMongoRateLimitStores } = require('./api/utils/mongoRateLimitStore');
+const {
+  assertMongoTlsEnabled,
+  getAdminLoginUrl,
+  isPrivateAdminHost
+} = require('./api/utils/securityConfig');
+const {
+  isAdminOnlyRequest,
+  isPublicPageRequest,
+  selectListenerRateLimiter
+} = require('./api/utils/listenerAccess');
 const { isSafeFilename } = require('./api/utils/validation');
+const { adminOnly } = require('./api/middleware/auth');
 
 // ── Crash handlers ────────────────────────────────────────────
 process.on('uncaughtException',  (err) => console.error('❌ Uncaught Exception:', err.message));
 process.on('unhandledRejection', (reason) => console.error('❌ Unhandled Rejection:', reason?.message || reason));
 
-const { MONGODB_URI, PORT = 4000, ORIGIN, NODE_ENV } = process.env;
+const {
+  MONGODB_URI,
+  PORT = 4000,
+  ADMIN_PORT = 4001,
+  ADMIN_HOST = '127.0.0.1',
+  ADMIN_URL = `http://localhost:${ADMIN_PORT}`,
+  BASE_URL = `http://localhost:${PORT}`,
+  ORIGIN,
+  NODE_ENV
+} = process.env;
 const isProd = NODE_ENV === 'production';
 const trustProxy = process.env.TRUST_PROXY === 'true';
+const publicPort = Number(PORT);
+const adminPort = Number(ADMIN_PORT);
+const adminHost = ADMIN_HOST.trim();
+let adminLoginUrl;
 
 const app = express();
 if (trustProxy) app.set('trust proxy', 1);
 
 function validateSecurityConfiguration() {
+  if (!Number.isInteger(publicPort) || publicPort < 1 || publicPort > 65535) {
+    throw new Error('PORT must be an integer between 1 and 65535');
+  }
+  if (!Number.isInteger(adminPort) || adminPort < 1 || adminPort > 65535) {
+    throw new Error('ADMIN_PORT must be an integer between 1 and 65535');
+  }
+  if (publicPort === adminPort) {
+    throw new Error('ADMIN_PORT must differ from PORT');
+  }
+  if (!adminHost) {
+    throw new Error('ADMIN_HOST must be a non-empty private interface address');
+  }
+  adminLoginUrl = getAdminLoginUrl(ADMIN_URL, isProd);
   const minSecretLength = 64;
   if (!MONGODB_URI) throw new Error('MONGODB_URI must be configured');
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < minSecretLength) {
@@ -32,18 +70,25 @@ function validateSecurityConfiguration() {
     throw new Error(`JWT_REFRESH_SECRET must be at least ${minSecretLength} characters`);
   }
   if (isProd) {
+    if (!isPrivateAdminHost(adminHost)) {
+      throw new Error('Production ADMIN_HOST must be a loopback or private-network address');
+    }
+    if (!BASE_URL.startsWith('https://')) {
+      throw new Error('Production BASE_URL must be the public website HTTPS URL');
+    }
     if (!ORIGIN || ORIGIN.split(',').some(origin => !origin.trim().startsWith('https://'))) {
       throw new Error('Production ORIGIN must contain only HTTPS origins');
     }
     if (!trustProxy) {
       throw new Error('Set TRUST_PROXY=true when production TLS terminates at a trusted reverse proxy');
     }
+    assertMongoTlsEnabled(MONGODB_URI);
   }
 }
 
 // ── Upload dirs ───────────────────────────────────────────────
 async function createUploadsDir() {
-  const dirs = ['uploads','uploads/projects','uploads/equipment','uploads/services','uploads/general','uploads/images'];
+  const dirs = ['uploads','uploads/projects','uploads/equipment','uploads/services','uploads/general','uploads/images','uploads/delivery-documents'];
   for (const d of dirs) await fs.mkdir(path.join(__dirname, d), { recursive: true });
   console.log('✅ Uploads directory exists');
 }
@@ -54,6 +99,18 @@ app.use((req, res, next) => {
   const isHttps = req.secure || (trustProxy && req.get('x-forwarded-proto') === 'https');
   if (isProd && !isHttps)
     return res.redirect(301, `https://${req.get('host')}${req.url}`);
+  next();
+});
+
+app.use((req, res, next) => {
+  const adminListener = req.socket.localPort === adminPort;
+  req.isAdminListener = adminListener;
+  if (!adminListener && isAdminOnlyRequest(req.method, req.path)) {
+    return res.status(404).json({ success: false, message: 'Not found' });
+  }
+  if (adminListener && isPublicPageRequest(req.method, req.path)) {
+    return res.status(404).json({ success: false, message: 'Not found' });
+  }
   next();
 });
 
@@ -79,9 +136,9 @@ app.use(helmet({
     directives: {
       defaultSrc:    ["'self'"],
       styleSrc:      ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
-      // The hashes permit the two existing fixed admin bootstrap scripts
+      // The hashes permit the fixed inline admin bootstrap scripts
       // without allowing attacker-controlled inline JavaScript.
-      scriptSrc:     ["'self'", "https://cdnjs.cloudflare.com", "https://accounts.google.com", "'sha256-5YPkBoeUY8ajL6BRlXbFvvPmSg/v6YMCmcDPnm93VC8='", "'sha256-Mhk9O1ym+e30i0Tu9FdJ4WGEK6eC3n68fc+XDA5CkT8='", "'sha256-ZV6X1b4fntwH8HH4urD4qTASc1BvEwgYzXRraRfgrWw='"],
+      scriptSrc:     ["'self'", "https://cdnjs.cloudflare.com", "https://accounts.google.com", "'sha256-fPhMVu3K2TcrjoiR6seN9dNoH01ylN5JiAgvRaq6gJk='", "'sha256-Mhk9O1ym+e30i0Tu9FdJ4WGEK6eC3n68fc+XDA5CkT8='", "'sha256-ZV6X1b4fntwH8HH4urD4qTASc1BvEwgYzXRraRfgrWw='"],
       scriptSrcAttr: ["'none'"],
       fontSrc:       ["'self'", "https://cdnjs.cloudflare.com", "https://fonts.gstatic.com"],
       imgSrc:        ["'self'", "data:", "https:", "http:"],
@@ -93,46 +150,68 @@ app.use(helmet({
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 
-// ── Sanitization ─────────────────────────────────────────────
-app.use(mongoSanitize());
-app.use(xss());
-
 // ── Body parser — FIX: 100mb → 10mb ─────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ── Sanitization ─────────────────────────────────────────────
+app.use(mongoSanitize());
+app.use(xss());
 
 // ── Logger ────────────────────────────────────────────────────
 app.use(morgan(isProd ? 'combined' : 'dev'));
 
 // ── Static files ─────────────────────────────────────────────
+app.get('/', (req, res) => {
+  if (req.isAdminListener) {
+    return res.redirect(302, `${BASE_URL.replace(/\/+$/, '')}/`);
+  }
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/admin-access', (req, res) => {
+  if (req.isAdminListener) return res.redirect(302, '/admin/login');
+  res.redirect(302, adminLoginUrl);
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/images', express.static(path.join(__dirname, 'public', 'images')));
 // NOTE: /uploads is NOT served statically — use /api/files/:category/:filename
 
 // ── Rate limiters ────────────────────────────────────────────
-const mkLimiter = (max, windowMs = 15*60*1000, msg = 'Too many requests') =>
-  rateLimit({
+const mkLimiter = (name, max, windowMs = 15*60*1000, msg = 'Too many requests') => {
+  return rateLimit({
     windowMs, max, standardHeaders: true, legacyHeaders: false,
     keyGenerator: (req) => req.user?.id || req.ip,
+    store: createMongoRateLimitStore(name),
     message: { success: false, message: msg },
   });
+};
 
-const generalLimiter = mkLimiter(100);
-const strictLimiter  = mkLimiter(50);
-const adminLimiter   = mkLimiter(200);
+const generalLimiter = mkLimiter('general', 100);
+const strictLimiter  = mkLimiter('strict', 50);
+const adminLimiter   = mkLimiter('admin', 200);
 
 // ── Secure file serving (/api/files/:category/:filename) ─────
 const UPLOAD_CATEGORIES = ['projects','equipment','services','general','images','avatars'];
+const PRIVATE_UPLOAD_CATEGORIES = ['delivery-documents'];
 app.get('/api/files/:category/:filename', (req, res) => {
   const { category, filename } = req.params;
-  if (!UPLOAD_CATEGORIES.includes(category))
+  const isPrivateCategory = PRIVATE_UPLOAD_CATEGORIES.includes(category);
+  if (!isPrivateCategory && !UPLOAD_CATEGORIES.includes(category))
     return res.status(400).json({ success: false, message: 'Invalid category' });
   if (!isSafeFilename(filename))
     return res.status(400).json({ success: false, message: 'Invalid filename' });
-  const filePath = path.join(__dirname, 'uploads', category, filename);
-  res.sendFile(filePath, err => {
-    if (err) res.status(404).json({ success: false, message: 'File not found' });
-  });
+  const sendFile = () => {
+    const filePath = path.join(__dirname, 'uploads', category, filename);
+    res.sendFile(filePath, {
+      headers: isPrivateCategory ? { 'Cache-Control': 'private, no-store' } : {}
+    }, err => {
+      if (err) res.status(404).json({ success: false, message: 'File not found' });
+    });
+  };
+  if (isPrivateCategory) return adminOnly()(req, res, sendFile);
+  sendFile();
 });
 
 // ── Legacy /uploads static serving (backward compat) ─────────
@@ -153,12 +232,18 @@ const contentRoutes      = require('./api/routes/content');
 const contactRoutes      = require('./api/routes/contact');
 const testimonialsRoutes = require('./api/routes/testimonials');
 const adminRoutes        = require('./api/routes/admin');
+const deliveryProjectsRoutes = require('./api/routes/deliveryProjects');
 
 app.use('/api/auth',         authRoutes);
 app.use('/api/content',      generalLimiter, contentRoutes);
-app.use('/api/contact',      strictLimiter,  contactRoutes);
-app.use('/api/testimonials', strictLimiter,  testimonialsRoutes);
+app.use('/api/contact', (req, res, next) => {
+  selectListenerRateLimiter(req.isAdminListener, strictLimiter, adminLimiter)(req, res, next);
+}, contactRoutes);
+app.use('/api/testimonials', (req, res, next) => {
+  selectListenerRateLimiter(req.isAdminListener, strictLimiter, adminLimiter)(req, res, next);
+}, testimonialsRoutes);
 app.use('/api/admin',        adminLimiter,   adminRoutes);
+app.use('/api/delivery-projects', adminLimiter, deliveryProjectsRoutes);
 
 // ── Admin pages ──────────────────────────────────────────────
 app.get('/admin',           (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'login.html')));
@@ -166,8 +251,6 @@ app.get('/admin/login',     (req, res) => res.sendFile(path.join(__dirname, 'pub
 app.get('/admin/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin', 'dashboard.html')));
 
 // ── Public pages ─────────────────────────────────────────────
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
 // Redirect removed pages
 ['login','signup','welcome'].forEach(p => {
   app.get(`/${p}`,      (req, res) => res.redirect(301, '/'));
@@ -216,24 +299,32 @@ async function startServer() {
   try {
     validateSecurityConfiguration();
     await dbConnection.connect(MONGODB_URI);
+    await initializeMongoRateLimitStores();
   } catch (err) {
-    console.error('❌ MongoDB connection failed:', err.message);
+    console.error('❌ Application security initialization failed:', err.message);
     process.exit(1);
   }
 
-  const port = Number(PORT);
-  const server = app.listen(port, () =>
-    console.log(`🚀 A-KIME running on http://localhost:${port} [${NODE_ENV}]`)
-  );
+  let publicServer;
+  try {
+    publicServer = await listen(publicPort, '0.0.0.0');
+    await listen(adminPort, adminHost);
+    console.log(`🚀 Public website listening on port ${publicPort} [${NODE_ENV}]`);
+    console.log(`🔒 Admin listener bound to ${adminHost}:${adminPort} [${NODE_ENV}]`);
+  } catch (error) {
+    if (publicServer) {
+      await new Promise(resolve => publicServer.close(resolve));
+    }
+    console.error('❌ Failed to bind application listeners:', error.message);
+    process.exit(1);
+  }
+}
 
-  server.on('error', err => {
-    if (err.code === 'EADDRINUSE') {
-      const fallback = port + 1;
-      console.warn(`⚠️  Port ${port} in use — trying ${fallback}`);
-      app.listen(fallback, () =>
-        console.log(`🚀 A-KIME running on http://localhost:${fallback} [${NODE_ENV}]`)
-      );
-    } else throw err;
+function listen(port, host) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, host);
+    server.once('listening', () => resolve(server));
+    server.once('error', reject);
   });
 }
 

@@ -1,0 +1,50 @@
+name: Continuous integration
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Node.js ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          find api public scripts tests -type f -name '*.js' -print0 | xargs -0 -r -n1 node --check
+          node --check server.js
+
+      - name: Run tests
+        run: npm test
+
+      - name: Audit dependencies
+        if: matrix.node-version == 22
+        run: npm audit
