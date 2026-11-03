@@ -82,3 +82,11 @@ The repository's CI workflow runs syntax checks and unit tests for Node.js 18,
 these runs consume the GitHub Actions minutes included in the repository
 owner's plan; usage beyond the included allowance may be billed if additional
 spending is enabled.
+
+Dependabot is configured in `.github/dependabot.yml` to check npm packages and
+GitHub Actions weekly and open grouped version-update pull requests. To receive
+automatic security-fix pull requests, a repository administrator must enable
+the dependency graph, Dependabot alerts, and Dependabot security updates under
+**Settings → Security → Code security and analysis**. Dependabot itself does not
+need a GitHub Actions runner; its pull requests do trigger the existing CI and
+consume the repository's included Actions minutes.

@@ -36,11 +36,34 @@ const auth = (requiredRoles = []) => {
       }
 
       // Find user and check if still active
-      const user = await User.findById(decoded.id);
+      const user = await User.findById(decoded.id).select('+twoFactorSecret');
       if (!user || !user.isActive) {
         return res.status(401).json({
           success: false,
           message: 'User not found or inactive'
+        });
+      }
+
+      if (decoded.purpose === 'mfa-enrollment') {
+        return res.status(403).json({
+          success: false,
+          message: 'MFA enrollment tokens cannot access protected resources'
+        });
+      }
+
+      if (['admin', 'editor'].includes(user.role) && !req.isAdminListener) {
+        return res.status(404).json({
+          success: false,
+          message: 'Not found'
+        });
+      }
+
+      if (['admin', 'editor'].includes(user.role) &&
+          (!user.twoFactorEnabled || !user.twoFactorSecret)) {
+        return res.status(403).json({
+          success: false,
+          code: 'MFA_SETUP_REQUIRED',
+          message: 'Multi-factor authentication must be enabled for this account'
         });
       }
 
@@ -113,7 +136,8 @@ const optionalAuth = async (req, res, next) => {
         const decoded = jwtUtils.verifyAccessToken(token);
         const user = await User.findById(decoded.id);
         
-        if (user && user.isActive && !user.isLocked) {
+        if (user && user.isActive && !user.isLocked &&
+            (!['admin', 'editor'].includes(user.role) || req.isAdminListener)) {
           req.user = {
             id: user._id,
             email: user.email,
@@ -156,5 +180,3 @@ module.exports = {
   optionalAuth,
   sensitiveOperation
 };
-
-

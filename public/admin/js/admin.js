@@ -1410,11 +1410,7 @@ renderTestimonialsTable(testimonials) {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       if (confirm("Approuver ce témoignage ?")) {
-        // ✅ Use the correct endpoint
-        await this.apiCall(`/api/testimonials/${id}/approve`, { method: "PUT" });
-        this.loadSectionData('testimonials');
-        updateUnreadBadge();
-        this.showNotification("Témoignage approuvé ✅", "success");
+        await this.approveTestimonial(id);
       }
     });
   });
@@ -1423,11 +1419,7 @@ renderTestimonialsTable(testimonials) {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.id;
       if (confirm("Supprimer ce témoignage ?")) {
-        // ✅ Use the correct endpoint
-        await this.apiCall(`/api/testimonials/${id}`, { method: "DELETE" });
-        this.loadSectionData('testimonials');
-        updateUnreadBadge();
-        this.showNotification("Témoignage supprimé 🗑", "success");
+        await this.deleteTestimonial(id);
       }
     });
   });
@@ -1471,11 +1463,11 @@ renderTestimonialsTable(testimonials) {
         
         if (confirm(`Êtes-vous sûr de vouloir approuver ${ids.length} témoignages ?`)) {
             try {
-                await this.apiCall('/api/testimonials/bulk/approve', { 
+                const result = await this.apiCall('/api/testimonials/bulk/approve', {
                     method: 'PUT', 
                     body: JSON.stringify({ ids }) 
                 });
-                this.showNotification(`${ids.length} témoignages approuvés ✅`, 'success');
+                this.showNotification(`${result.approvedCount} témoignages approuvés ✅`, 'success');
                 this.loadSectionData('testimonials');
                 updateUnreadBadge();
             } catch (error) {
@@ -1493,11 +1485,11 @@ renderTestimonialsTable(testimonials) {
         
         if (confirm(`Êtes-vous sûr de vouloir supprimer ${ids.length} témoignages ?`)) {
             try {
-                await this.apiCall('/api/testimonials/bulk/delete', { 
+                const result = await this.apiCall('/api/testimonials/bulk/delete', {
                     method: 'DELETE', 
                     body: JSON.stringify({ ids }) 
                 });
-                this.showNotification(`${ids.length} témoignages supprimés 🗑`, 'success');
+                this.showNotification(`${result.deletedCount} témoignages supprimés 🗑`, 'success');
                 this.loadSectionData('testimonials');
                 updateUnreadBadge();
             } catch (error) {
@@ -1620,7 +1612,8 @@ async deleteTestimonial(id) {
             this.showNotification('Témoignage supprimé avec succès', 'success');
             this.loadSectionData('testimonials');
         } catch (error) {
-            this.showNotification('Erreur lors de la suppression', 'error');
+            console.error('Testimonial deletion failed:', error);
+            this.showNotification(`Erreur lors de la suppression: ${error.message}`, 'error');
         }
     }
 }
@@ -1631,7 +1624,8 @@ async approveTestimonial(id) {
         this.showNotification('Témoignage approuvé', 'success');
         this.loadSectionData('testimonials');
     } catch (error) {
-        this.showNotification('Erreur lors de l\'approbation', 'error');
+        console.error('Testimonial approval failed:', error);
+        this.showNotification(`Erreur lors de l'approbation: ${error.message}`, 'error');
     }
 }
 

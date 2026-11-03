@@ -6,6 +6,7 @@ const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const jwtUtils = require('../utils/jwt');
+const { createMongoRateLimitStore } = require('../utils/mongoRateLimitStore');
 const { authenticated, adminOnly, adminOrEditor, sensitiveOperation } = require('../middleware/auth');
 const auditLog = require('../middleware/auditLog');
 const multer = require('multer');
@@ -108,12 +109,28 @@ const authLimiter = rateLimit({
     message: 'Too many authentication attempts, please try again later'
   },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  store: createMongoRateLimitStore('auth-login')
+});
+
+const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    success: false,
+    message: 'Too many two-factor attempts, please try again later'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createMongoRateLimitStore('auth-two-factor')
 });
 
 const generalAuthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: createMongoRateLimitStore('auth-general'),
   message: {
     success: false,
     message: 'Too many requests, please try again later'
@@ -229,7 +246,7 @@ router.post('/register', generalAuthLimiter, async (req, res) => {
  * @desc    Authenticate user and return tokens, optionally with 2FA
  * @access  Public
  */
-router.post('/login', authLimiter, async (req, res) => {
+const loginHandler = async (req, res) => {
   try {
     let { email, password, twoFactorCode } = req.body;
 
@@ -275,6 +292,20 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    const isPrivilegedUser = ['admin', 'editor'].includes(user.role);
+    if (isPrivilegedUser && req.path !== '/admin/login') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+    if (!isPrivilegedUser && req.path === '/admin/login') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
     if (user.isLocked) {
       return res.status(423).json({
         success: false,
@@ -291,7 +322,14 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    if (user.twoFactorEnabled && user.twoFactorSecret) {
+    if (user.twoFactorEnabled && !user.twoFactorSecret) {
+      return res.status(403).json({
+        success: false,
+        message: 'Two-factor authentication is unavailable for this account'
+      });
+    }
+
+    if (user.twoFactorEnabled) {
       if (!twoFactorCode) {
         return res.status(400).json({
           success: false,
@@ -315,6 +353,14 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     await user.resetLoginAttempts();
+
+    if (['admin', 'editor'].includes(user.role) && !user.twoFactorEnabled) {
+      return res.json({
+        success: true,
+        mfaEnrollmentRequired: true,
+        enrollmentToken: jwtUtils.generateMfaEnrollmentToken(user)
+      });
+    }
 
     const { accessToken, refreshToken, expiresIn } = jwtUtils.generateTokenPair(user);
 
@@ -348,7 +394,10 @@ router.post('/login', authLimiter, async (req, res) => {
       message: 'Internal server error'
     });
   }
-});
+};
+
+router.post('/login', authLimiter, loginHandler);
+router.post('/admin/login', authLimiter, loginHandler);
 
 /**
  * @route   POST /api/auth/google
@@ -357,10 +406,13 @@ router.post('/login', authLimiter, async (req, res) => {
  */
 router.post('/google', generalAuthLimiter, async (req, res) => {
   try {
-    let { credential } = req.body;
+    let { credential, twoFactorCode } = req.body;
 
     if (credential !== undefined && credential !== null) {
       credential = trimString(String(credential));
+    }
+    if (twoFactorCode !== undefined && twoFactorCode !== null) {
+      twoFactorCode = trimString(String(twoFactorCode));
     }
 
     if (!credential) {
@@ -424,8 +476,49 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
     if (!user.isActive || user.isLocked) {
       return res.status(401).json({ success: false, message: 'Account is unavailable' });
     }
+    if (['admin', 'editor'].includes(user.role) && !req.isAdminListener) {
+      return res.status(404).json({ success: false, message: 'Not found' });
+    }
+    if (user.twoFactorEnabled && !user.twoFactorSecret) {
+      return res.status(403).json({
+        success: false,
+        message: 'Two-factor authentication is unavailable for this account'
+      });
+    }
+
     if (user.twoFactorEnabled) {
-      return res.status(401).json({ success: false, message: 'Use password login to complete two-factor authentication' });
+      if (!twoFactorCode) {
+        return res.status(400).json({
+          success: false,
+          message: 'Two-factor authentication code is required',
+          requireTwoFactor: true
+        });
+      }
+      if (!/^\d{6,8}$/.test(twoFactorCode)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Code 2FA invalide (6-8 chiffres attendus)'
+        });
+      }
+      const verified = speakeasy.totp.verify({
+        secret: user.twoFactorSecret,
+        encoding: 'base32',
+        token: twoFactorCode
+      });
+      if (!verified) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid two-factor authentication code'
+        });
+      }
+    }
+
+    if (['admin', 'editor'].includes(user.role) && !user.twoFactorEnabled) {
+      return res.json({
+        success: true,
+        mfaEnrollmentRequired: true,
+        enrollmentToken: jwtUtils.generateMfaEnrollmentToken(user)
+      });
     }
 
     user.lastLogin = new Date();
@@ -507,6 +600,13 @@ router.post('/refresh', generalAuthLimiter, async (req, res) => {
       return res.status(401).json({
         success: false,
         message: 'User not found or inactive'
+      });
+    }
+
+    if (['admin', 'editor'].includes(user.role) && !req.isAdminListener) {
+      return res.status(404).json({
+        success: false,
+        message: 'Not found'
       });
     }
 
@@ -1274,12 +1374,58 @@ router.get('/audit-logs', adminOnly(), async (req, res) => {
 // TWO-FACTOR AUTHENTICATION ROUTES
 // ==============================================
 
+function mfaSetupAuth(req, res, next) {
+  const token = jwtUtils.extractTokenFromHeader(req.headers.authorization);
+  if (!token) return authenticated()(req, res, next);
+
+  let decoded;
+  try {
+    decoded = jwtUtils.verifyAccessToken(token);
+  } catch (error) {
+    return authenticated()(req, res, next);
+  }
+
+  if (decoded.purpose !== 'mfa-enrollment') {
+    return authenticated()(req, res, next);
+  }
+
+  return User.findById(decoded.id).then(user => {
+    if (!user || !user.isActive || user.isLocked) {
+      return res.status(401).json({
+        success: false,
+        message: 'Enrollment session is invalid or expired'
+      });
+    }
+    if (!['admin', 'editor'].includes(user.role) || user.twoFactorEnabled) {
+      return res.status(403).json({
+        success: false,
+        message: 'MFA enrollment is not available for this account'
+      });
+    }
+
+    req.user = {
+      id: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      avatar: user.avatar
+    };
+    next();
+  }).catch(error => {
+    console.error('MFA enrollment authentication error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Authentication error'
+    });
+  });
+}
+
 /**
  * @route   POST /api/auth/2fa/setup
  * @desc    Setup 2FA for a user
  * @access  Private
  */
-router.post('/2fa/setup', authenticated(), async (req, res) => {
+router.post('/2fa/setup', mfaSetupAuth, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('+twoFactorSecret');
     if (!user) {
@@ -1301,6 +1447,7 @@ router.post('/2fa/setup', authenticated(), async (req, res) => {
     // Generate QR code
     const qrCode = await qrcode.toDataURL(secret.otpauth_url);
 
+    res.set('Cache-Control', 'no-store');
     res.json({
       success: true,
       data: {
@@ -1322,7 +1469,7 @@ router.post('/2fa/setup', authenticated(), async (req, res) => {
  * @desc    Verify 2FA setup and enable it
  * @access  Private
  */
-router.post('/2fa/verify', authenticated(), async (req, res) => {
+router.post('/2fa/verify', mfaSetupAuth, twoFactorLimiter, async (req, res) => {
   try {
     let { token } = req.body;
     const user = await User.findById(req.user.id).select('+twoFactorSecret');
