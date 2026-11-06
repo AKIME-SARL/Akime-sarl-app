@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 const {
   isAdminOnlyRequest,
   isPublicPageRequest,
-  selectListenerRateLimiter
+  selectListenerRateLimiter,
+  isAdminHostname
 } = require('../api/utils/listenerAccess');
 
 test('public listener reserves admin pages and management APIs for the admin port', () => {
@@ -54,4 +55,11 @@ test('admin and public listeners use their own rate-limit policies', () => {
   const adminLimiter = () => 'admin';
   assert.equal(selectListenerRateLimiter(false, publicLimiter, adminLimiter), publicLimiter);
   assert.equal(selectListenerRateLimiter(true, publicLimiter, adminLimiter), adminLimiter);
+});
+
+test('single-port routing recognizes only the configured admin hostname', () => {
+  assert.equal(isAdminHostname('admin.example.com', 'admin.example.com'), true);
+  assert.equal(isAdminHostname('ADMIN.EXAMPLE.COM.', 'admin.example.com'), true);
+  assert.equal(isAdminHostname('www.example.com', 'admin.example.com'), false);
+  assert.equal(isAdminHostname(undefined, 'admin.example.com'), false);
 });

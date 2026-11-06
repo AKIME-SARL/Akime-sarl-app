@@ -49,8 +49,15 @@ function selectListenerRateLimiter(isAdminListener, publicLimiter, adminLimiter)
   return isAdminListener ? adminLimiter : publicLimiter;
 }
 
+function isAdminHostname(requestHostname, adminHostname) {
+  if (typeof requestHostname !== 'string' || typeof adminHostname !== 'string') return false;
+  return requestHostname.trim().toLowerCase().replace(/\.$/, '') ===
+    adminHostname.trim().toLowerCase().replace(/\.$/, '');
+}
+
 module.exports = {
   isAdminOnlyRequest,
   isPublicPageRequest,
-  selectListenerRateLimiter
+  selectListenerRateLimiter,
+  isAdminHostname
 };

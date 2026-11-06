@@ -18,7 +18,8 @@ const {
 const {
   isAdminOnlyRequest,
   isPublicPageRequest,
-  selectListenerRateLimiter
+  selectListenerRateLimiter,
+  isAdminHostname
 } = require('./api/utils/listenerAccess');
 const { isSafeFilename } = require('./api/utils/validation');
 const { adminOnly } = require('./api/middleware/auth');
@@ -39,10 +40,12 @@ const {
 } = process.env;
 const isProd = NODE_ENV === 'production';
 const trustProxy = process.env.TRUST_PROXY === 'true';
+const singlePortMode = process.env.SINGLE_PORT_MODE === 'true';
 const publicPort = Number(PORT);
 const adminPort = Number(ADMIN_PORT);
 const adminHost = ADMIN_HOST.trim();
 let adminLoginUrl;
+let adminHostname;
 
 const app = express();
 if (trustProxy) app.set('trust proxy', 1);
@@ -51,16 +54,19 @@ function validateSecurityConfiguration() {
   if (!Number.isInteger(publicPort) || publicPort < 1 || publicPort > 65535) {
     throw new Error('PORT must be an integer between 1 and 65535');
   }
-  if (!Number.isInteger(adminPort) || adminPort < 1 || adminPort > 65535) {
-    throw new Error('ADMIN_PORT must be an integer between 1 and 65535');
-  }
-  if (publicPort === adminPort) {
-    throw new Error('ADMIN_PORT must differ from PORT');
-  }
-  if (!adminHost) {
-    throw new Error('ADMIN_HOST must be a non-empty private interface address');
+  if (!singlePortMode) {
+    if (!Number.isInteger(adminPort) || adminPort < 1 || adminPort > 65535) {
+      throw new Error('ADMIN_PORT must be an integer between 1 and 65535');
+    }
+    if (publicPort === adminPort) {
+      throw new Error('ADMIN_PORT must differ from PORT');
+    }
+    if (!adminHost) {
+      throw new Error('ADMIN_HOST must be a non-empty private interface address');
+    }
   }
   adminLoginUrl = getAdminLoginUrl(ADMIN_URL, isProd);
+  adminHostname = new URL(adminLoginUrl).hostname;
   const minSecretLength = 64;
   if (!MONGODB_URI) throw new Error('MONGODB_URI must be configured');
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < minSecretLength) {
@@ -70,7 +76,7 @@ function validateSecurityConfiguration() {
     throw new Error(`JWT_REFRESH_SECRET must be at least ${minSecretLength} characters`);
   }
   if (isProd) {
-    if (!isPrivateAdminHost(adminHost)) {
+    if (!singlePortMode && !isPrivateAdminHost(adminHost)) {
       throw new Error('Production ADMIN_HOST must be a loopback or private-network address');
     }
     if (!BASE_URL.startsWith('https://')) {
@@ -103,7 +109,9 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  const adminListener = req.socket.localPort === adminPort;
+  const adminListener = singlePortMode
+    ? isAdminHostname(req.hostname, adminHostname)
+    : req.socket.localPort === adminPort;
   req.isAdminListener = adminListener;
   if (!adminListener && isAdminOnlyRequest(req.method, req.path)) {
     return res.status(404).json({ success: false, message: 'Not found' });
@@ -296,26 +304,25 @@ app.use((req, res) => res.status(404).json({ success: false, message: 'Not found
 
 // ── Start server ──────────────────────────────────────────────
 async function startServer() {
+  let publicServer;
+  let adminServer;
   try {
     validateSecurityConfiguration();
+    publicServer = await listen(publicPort, '0.0.0.0');
+    if (singlePortMode) {
+      console.log(`🚀 Single-port website and admin listener on port ${publicPort} [${NODE_ENV}]`);
+    } else {
+      adminServer = await listen(adminPort, adminHost);
+      console.log(`🚀 Public website listening on port ${publicPort} [${NODE_ENV}]`);
+      console.log(`🔒 Admin listener bound to ${adminHost}:${adminPort} [${NODE_ENV}]`);
+    }
+
     await dbConnection.connect(MONGODB_URI);
     await initializeMongoRateLimitStores();
   } catch (err) {
-    console.error('❌ Application security initialization failed:', err.message);
-    process.exit(1);
-  }
-
-  let publicServer;
-  try {
-    publicServer = await listen(publicPort, '0.0.0.0');
-    await listen(adminPort, adminHost);
-    console.log(`🚀 Public website listening on port ${publicPort} [${NODE_ENV}]`);
-    console.log(`🔒 Admin listener bound to ${adminHost}:${adminPort} [${NODE_ENV}]`);
-  } catch (error) {
-    if (publicServer) {
-      await new Promise(resolve => publicServer.close(resolve));
-    }
-    console.error('❌ Failed to bind application listeners:', error.message);
+    if (publicServer) await new Promise(resolve => publicServer.close(resolve));
+    if (adminServer) await new Promise(resolve => adminServer.close(resolve));
+    console.error('❌ Application startup failed:', err.message);
     process.exit(1);
   }
 }

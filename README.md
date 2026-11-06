@@ -119,6 +119,13 @@ minutes Actions incluses au forfait du dépôt privé.
    `http://localhost:4001/admin/login`.
 4. Se connecter — le panel redirige automatiquement les non-admins
 
+Pour un hébergement Node.js qui ne fournit qu'un seul port (par exemple un
+hébergement géré), définir `SINGLE_PORT_MODE=true`. Le fournisseur doit router
+le domaine public et le domaine admin vers la même application; l'application
+reconnaît l'interface admin grâce au nom d'hôte configuré dans `ADMIN_URL`.
+Définir également `BASE_URL`, `ADMIN_URL`, `PORT` et `ORIGIN` avec les valeurs
+de production, et inclure les deux origines HTTPS dans `ORIGIN`.
+
 Un exemple de configuration Nginx avec deux hôtes HTTPS et Certbot est
 disponible dans [`documentations/NGINX-DEPLOYMENT.md`](./documentations/NGINX-DEPLOYMENT.md).
 

@@ -49,15 +49,23 @@ they receive an ordinary login session. On their first password login, the
 admin page guides the user through enrollment. MFA verification is also
 rate-limited.
 
-The public website listens on `PORT` (default `4000`). The admin interface and
-its management APIs listen separately on `ADMIN_PORT` (default `4001`), bound
-to `ADMIN_HOST` (default `127.0.0.1`). The public listener rejects admin pages
-and privileged API routes; the admin listener rejects public website pages.
-Do not bind the admin listener to a public interface. Put a trusted HTTPS
-reverse proxy on the same host in front of the private admin listener, or use
-a VPN. If the proxy runs in another container, bind only to a private
-container-network address and firewall the port so only the proxy can reach
-it. Never publish `ADMIN_PORT` directly to the internet.
+By default, the public website listens on `PORT` (default `4000`). The admin
+interface and its management APIs listen separately on `ADMIN_PORT` (default
+`4001`), bound to `ADMIN_HOST` (default `127.0.0.1`). The public listener
+rejects admin pages and privileged API routes; the admin listener rejects
+public website pages. Do not bind the admin listener to a public interface.
+Put a trusted HTTPS reverse proxy on the same host in front of the private
+admin listener, or use a VPN. If the proxy runs in another container, bind only
+to a private container-network address and firewall the port so only the proxy
+can reach it. Never publish `ADMIN_PORT` directly to the internet.
+
+For managed hosting that routes both public and admin domains to one Node.js
+port, set `SINGLE_PORT_MODE=true`. The app listens only on `PORT` and selects
+the admin surface by matching the request hostname to the hostname in
+`ADMIN_URL`. Configure the hosting provider to route both domains to the app,
+set `ADMIN_URL` to the admin HTTPS origin, and include both HTTPS origins in
+`ORIGIN`. Keep admin accounts protected by MFA; hostname routing is not a
+replacement for authentication.
 
 Configure the reverse proxy to forward the admin hostname to
 `http://127.0.0.1:4001`, and enable `TRUST_PROXY=true` only when requests can
