@@ -1,17 +1,36 @@
 const { isIP } = require('node:net');
 
 function assertMongoTlsEnabled(uri) {
-  let parsedUri;
-  try {
-    parsedUri = new URL(uri);
-  } catch (error) {
+  const match = typeof uri === 'string' &&
+    /^(mongodb(?:\+srv)?:\/\/)([^/?#]+)(\/[^?#]*)?(\?[^#]*)?$/i.exec(uri);
+  if (!match || /\s/.test(uri)) {
     throw new Error('MONGODB_URI must be a valid MongoDB connection URI');
   }
 
-  const tlsOption = parsedUri.searchParams.get('tls') || parsedUri.searchParams.get('ssl');
+  const [, scheme, authority, pathname = '/', query = ''] = match;
+  const atIndex = authority.lastIndexOf('@');
+  const credentials = atIndex >= 0 ? `${authority.slice(0, atIndex)}@` : '';
+  const hosts = (atIndex >= 0 ? authority.slice(atIndex + 1) : authority).split(',');
+  if (!hosts.length || hosts.some(host => !host) ||
+      (scheme.toLowerCase() === 'mongodb+srv://' && hosts.length !== 1)) {
+    throw new Error('MONGODB_URI must be a valid MongoDB connection URI');
+  }
+
+  try {
+    for (const host of hosts) {
+      new URL(`${scheme}${credentials}${host}${pathname}${query}`);
+    }
+  } catch {
+    throw new Error('MONGODB_URI must be a valid MongoDB connection URI');
+  }
+
+  const parsedUri = new URL(`${scheme}${credentials}${hosts[0]}${pathname}${query}`);
+  const tlsOption = parsedUri.searchParams.has('tls')
+    ? parsedUri.searchParams.get('tls')
+    : parsedUri.searchParams.get('ssl');
   const tlsEnabled = tlsOption
     ? tlsOption.toLowerCase() === 'true'
-    : parsedUri.protocol === 'mongodb+srv:';
+    : parsedUri.protocol.toLowerCase() === 'mongodb+srv:';
 
   if (!tlsEnabled) {
     throw new Error('Production MONGODB_URI must enable TLS (mongodb+srv or tls=true)');

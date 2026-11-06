@@ -13,10 +13,16 @@ test('production accepts MongoDB SRV URIs with default TLS', () => {
 test('production accepts standard MongoDB URIs only with explicit TLS', () => {
   assert.doesNotThrow(() => assertMongoTlsEnabled('mongodb://db.example.test/akime?tls=true'));
   assert.doesNotThrow(() => assertMongoTlsEnabled('mongodb://db.example.test/akime?ssl=true'));
+  assert.doesNotThrow(() => assertMongoTlsEnabled(
+    'mongodb://one.example.test:27017,two.example.test:27017/akime?ssl=true'
+  ));
 });
 
 test('production rejects MongoDB URIs with TLS disabled or unspecified', () => {
   assert.throws(() => assertMongoTlsEnabled('mongodb://db.example.test/akime'), /must enable TLS/);
+  assert.throws(() => assertMongoTlsEnabled(
+    'mongodb://db.example.test/akime?tls=false&ssl=true'
+  ), /must enable TLS/);
   assert.throws(() => assertMongoTlsEnabled('mongodb+srv://db.example.test/akime?tls=false'), /must enable TLS/);
 });
 

@@ -72,6 +72,8 @@ Set `ADMIN_URL` to the HTTPS hostname served by the trusted proxy (for example
 `https://admin.example.com`). The public website's Espace pro link redirects
 there; the admin listener itself remains private and must not be exposed
 directly.
+See [NGINX-DEPLOYMENT.md](./NGINX-DEPLOYMENT.md) for a VPS Nginx and
+Let's Encrypt setup example.
 
 Repository administrators should also enable GitHub's native **Secret
 scanning** and **Push protection** under **Settings → Advanced Security** when
