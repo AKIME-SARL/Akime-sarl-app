@@ -116,6 +116,7 @@ NODE_ENV=production
 PORT=4000
 ADMIN_PORT=4001
 ADMIN_HOST=127.0.0.1
+SINGLE_PORT_MODE=false
 TRUST_PROXY=true
 BASE_URL=https://example.com
 ADMIN_URL=https://admin.example.com
@@ -125,7 +126,8 @@ ORIGIN=https://example.com,https://www.example.com,https://admin.example.com
 Also configure production MongoDB TLS, the database URI, JWT secrets, and the
 other required application settings. Start Node under a process manager such as
 systemd so it starts on boot and restarts after failure. Nginx assumes the app
-is already listening on the two loopback upstreams.
+is already listening on the two loopback upstreams. Keep `SINGLE_PORT_MODE`
+false for this two-listener VPS setup.
 
 The Node public listener binds to `0.0.0.0:4000`, so firewall rules are
 important: only Nginx should be able to reach it. The admin listener should
