@@ -119,6 +119,9 @@ minutes Actions incluses au forfait du dépôt privé.
    `http://localhost:4001/admin/login`.
 4. Se connecter — le panel redirige automatiquement les non-admins
 
+Un exemple de configuration Nginx avec deux hôtes HTTPS et Certbot est
+disponible dans [`documentations/NGINX-DEPLOYMENT.md`](./documentations/NGINX-DEPLOYMENT.md).
+
 ## Gestion privée des projets
 
 Les projets de livraison interne sont stockés dans la collection `deliveryprojects`, séparée de `projects` qui reste le portfolio public. La rubrique **Projets internes** du tableau de bord est réservée aux administrateurs. Son API exige également le rôle `admin` pour chaque requête :
