@@ -31,6 +31,13 @@ function isValidObjectId(id) {
   return Types.ObjectId.isValid(id);
 }
 
+function isValidObjectIdList(ids, max = 100) {
+  return Array.isArray(ids) &&
+    ids.length > 0 &&
+    ids.length <= max &&
+    ids.every(isValidObjectId);
+}
+
 function isValidEmail(email) {
   if (!email || typeof email !== 'string') return false;
   if (email.length > STRING_LIMITS.EMAIL_MAX) return false;
@@ -149,6 +156,7 @@ module.exports = {
   VALID_AUDIT_RESOURCES,
   VALID_AUDIT_ACTIONS,
   isValidObjectId,
+  isValidObjectIdList,
   isValidEmail,
   isValidStringLength,
   isValidInteger,

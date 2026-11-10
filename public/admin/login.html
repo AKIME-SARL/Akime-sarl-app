@@ -42,10 +42,29 @@
           </button>
         </div>
       </div>
+      <div class="form-group" id="twoFactorGroup" style="display:none;margin-bottom:24px;">
+        <label for="twoFactorCode">CODE D'AUTHENTIFICATION</label>
+        <input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" maxlength="8" placeholder="123456">
+      </div>
       <button type="submit" class="btn btn-gold" style="width:100%;justify-content:center;padding:15px;" id="loginBtn">
         <i class="fas fa-sign-in-alt"></i> SE CONNECTER
       </button>
     </form>
+
+    <section id="mfaEnrollment" hidden>
+      <p>La double authentification est obligatoire pour les comptes d'administration. Scannez ce QR code avec votre application d'authentification, puis saisissez le code à 6 chiffres.</p>
+      <img id="mfaQrCode" alt="QR code de configuration de la double authentification" style="display:block;max-width:220px;margin:16px auto;">
+      <p>Clé de configuration : <code id="mfaSecret"></code></p>
+      <form id="mfaEnrollmentForm">
+        <div class="form-group" style="margin-bottom:16px;">
+          <label for="mfaSetupCode">CODE D'AUTHENTIFICATION</label>
+          <input type="text" id="mfaSetupCode" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,8}" maxlength="8" required>
+        </div>
+        <button type="submit" class="btn btn-gold" style="width:100%;justify-content:center;padding:15px;" id="mfaVerifyBtn">
+          ACTIVER LA DOUBLE AUTHENTIFICATION
+        </button>
+      </form>
+    </section>
 
     <div style="text-align:center;margin-top:20px;">
       <a href="/" style="font-size:.82rem;color:var(--gray-dark);text-decoration:underline;">← Retour au site</a>
@@ -66,37 +85,113 @@
     icon.className = pwd.type === 'password' ? 'fas fa-eye' : 'fas fa-eye-slash';
   });
 
+  let enrollmentToken = null;
+  const error = document.getElementById('loginError');
+  const loginForm = document.getElementById('loginForm');
+  const twoFactorGroup = document.getElementById('twoFactorGroup');
+  const twoFactorCode = document.getElementById('twoFactorCode');
+
+  function showError(message) {
+    error.textContent = message;
+    error.style.display = 'block';
+  }
+
   document.getElementById('loginForm').addEventListener('submit', async e => {
     e.preventDefault();
     const btn   = document.getElementById('loginBtn');
-    const error = document.getElementById('loginError');
     error.style.display = 'none';
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connexion…';
     btn.disabled  = true;
 
     try {
-      const res  = await fetch('/api/auth/login', {
+      const credentials = {
+        email: document.getElementById('loginEmail').value.trim(),
+        password: document.getElementById('loginPassword').value
+      };
+      if (twoFactorCode.value) credentials.twoFactorCode = twoFactorCode.value.trim();
+
+      const res  = await fetch('/api/auth/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email:    document.getElementById('loginEmail').value.trim(),
-          password: document.getElementById('loginPassword').value,
-        })
+        body: JSON.stringify(credentials)
       });
       const data = await res.json();
+
+      if (data.requireTwoFactor) {
+        twoFactorGroup.style.display = 'block';
+        twoFactorCode.required = true;
+        twoFactorCode.focus();
+        showError(data.message || 'Saisissez votre code d’authentification.');
+        return;
+      }
+
+      if (data.success && data.mfaEnrollmentRequired && data.enrollmentToken) {
+        enrollmentToken = data.enrollmentToken;
+        const setupResponse = await fetch('/api/auth/2fa/setup', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${enrollmentToken}` }
+        });
+        const setup = await setupResponse.json();
+        if (!setupResponse.ok || !setup.success) {
+          throw new Error(setup.message || 'Impossible de configurer la double authentification');
+        }
+        document.getElementById('mfaQrCode').src = setup.data.qrCode;
+        document.getElementById('mfaSecret').textContent = setup.data.secret;
+        loginForm.hidden = true;
+        document.getElementById('mfaEnrollment').hidden = false;
+        return;
+      }
 
       if (data.success && data.data?.accessToken) {
         sessionStorage.setItem('akime_token', data.data.accessToken);
         sessionStorage.setItem('akime_user', JSON.stringify(data.data.user || {}));
         window.location.replace('dashboard.html');
+        return;
       } else {
         throw new Error(data.message || 'Identifiants incorrects');
       }
     } catch (err) {
-      error.textContent    = err.message;
-      error.style.display  = 'block';
-      btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> SE CONNECTER';
-      btn.disabled  = false;
+      showError(err.message);
+    } finally {
+      if (!loginForm.hidden) {
+        btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> SE CONNECTER';
+        btn.disabled = false;
+      }
+    }
+  });
+
+  document.getElementById('mfaEnrollmentForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('mfaVerifyBtn');
+    button.disabled = true;
+    error.style.display = 'none';
+    try {
+      const response = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${enrollmentToken}`
+        },
+        body: JSON.stringify({ token: document.getElementById('mfaSetupCode').value.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Code d’authentification invalide');
+      }
+
+      enrollmentToken = null;
+      document.getElementById('mfaEnrollment').hidden = true;
+      loginForm.hidden = false;
+      twoFactorGroup.style.display = 'block';
+      twoFactorCode.required = true;
+      twoFactorCode.value = '';
+      document.getElementById('loginPassword').value = '';
+      showError('Double authentification activée. Connectez-vous avec votre nouveau code.');
+      twoFactorCode.focus();
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      button.disabled = false;
     }
   });
 </script>
