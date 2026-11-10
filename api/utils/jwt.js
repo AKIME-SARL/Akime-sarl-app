@@ -20,6 +20,17 @@ class JWTUtils {
     });
   }
 
+  generateMfaEnrollmentToken(user) {
+    return jwt.sign({
+      id: user._id,
+      purpose: 'mfa-enrollment'
+    }, this.accessTokenSecret, {
+      expiresIn: '10m',
+      issuer: 'akime-admin',
+      audience: 'akime-users'
+    });
+  }
+
   /**
    * Generate refresh token
    */

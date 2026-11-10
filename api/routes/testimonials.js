@@ -4,6 +4,7 @@ const Testimonial = require('../models/Testimonial');
 const { adminOrEditor } = require('../middleware/auth');
 const {
   isValidObjectId,
+  isValidObjectIdList,
   isValidRating,
   isValidStringLength,
   trimString,
@@ -71,6 +72,30 @@ router.post('/', async (req, res) => {
     });
     res.json({ success: true, data: t, message: 'Merci ! En attente de validation.' });
   } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+router.put('/bulk/approve', adminOrEditor(), async (req, res) => {
+  const { ids } = req.body;
+  if (!isValidObjectIdList(ids)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Sélection invalide (1 à 100 identifiants attendus)'
+    });
+  }
+
+  try {
+    const result = await Testimonial.updateMany(
+      { _id: { $in: [...new Set(ids)] } },
+      { $set: { approved: true } }
+    );
+    res.json({
+      success: true,
+      data: { approvedCount: result.modifiedCount },
+      message: 'Témoignages approuvés'
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 router.put('/:id/approve', adminOrEditor(), async (req, res) => {
@@ -152,6 +177,29 @@ router.put('/:id', adminOrEditor(), async (req, res) => {
     if (!t) return res.status(404).json({ success: false, message: 'Introuvable' });
     res.json({ success: true, data: t });
   } catch (e) { res.status(400).json({ success: false, message: e.message }); }
+});
+
+router.delete('/bulk/delete', adminOrEditor(), async (req, res) => {
+  const { ids } = req.body;
+  if (!isValidObjectIdList(ids)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Sélection invalide (1 à 100 identifiants attendus)'
+    });
+  }
+
+  try {
+    const result = await Testimonial.deleteMany({
+      _id: { $in: [...new Set(ids)] }
+    });
+    res.json({
+      success: true,
+      data: { deletedCount: result.deletedCount },
+      message: 'Témoignages supprimés'
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 router.delete('/:id', adminOrEditor(), async (req, res) => {

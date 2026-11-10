@@ -9,7 +9,7 @@
     "create-admin": "node scripts/create-admin.js",
     "test-mongodb": "node scripts/test-mongodb.js",
     "test-db": "node scripts/simple-mongodb-test.js",
-    "test": "echo \"No tests specified\"",
+    "test": "node --test tests/delivery-project-model.test.js tests/validation.test.js tests/mongo-rate-limit-store.test.js tests/security-config.test.js tests/listener-access.test.js",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
     "seed": "node scripts/seed.js",
@@ -23,7 +23,7 @@
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.22.3",
+    "express": "4.22.3",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.3.0",
     "google-auth-library": "^10.9.0",
@@ -41,5 +41,11 @@
   "devDependencies": {
     "form-data": "^4.0.6",
     "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1"
   }
 }
