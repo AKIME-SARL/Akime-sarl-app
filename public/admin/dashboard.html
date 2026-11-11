@@ -13,8 +13,13 @@
     <script>
       (function () {
         const storage = sessionStorage;
+        const redirectToLogin = () => {
+          storage.removeItem('akime_token');
+          storage.removeItem('akime_user');
+          window.location.replace('/admin/login');
+        };
         const token = storage.getItem('akime_token');
-        if (!token) { window.location.replace('/admin/login'); return; }
+        if (!token) { redirectToLogin(); return; }
         try {
           const payload = JSON.parse(atob(token.split('.')[1]));
           if (Date.now() >= payload.exp * 1000) {
@@ -26,19 +31,19 @@
                 fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + d.data.accessToken } })
                   .then(r => r.json()).then(me => {
                     if (!me.success || (me.data.user.role !== 'admin' && me.data.user.role !== 'editor'))
-                      window.location.replace('/admin/login');
+                      redirectToLogin();
                   });
-              } else { storage.clear(); window.location.replace('/admin/login'); }
-            }).catch(() => { storage.clear(); window.location.replace('/admin/login'); });
+              } else { redirectToLogin(); }
+            }).catch(redirectToLogin);
           } else {
             fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } })
               .then(r => r.json()).then(d => {
                 if (!d.success || (d.data.user.role !== 'admin' && d.data.user.role !== 'editor'))
-                  window.location.replace('/admin/login');
+                  redirectToLogin();
                 else storage.setItem('akime_user', JSON.stringify(d.data.user));
-              }).catch(() => {});
+              }).catch(redirectToLogin);
           }
-        } catch(e) { storage.clear(); window.location.replace('/admin/login'); }
+        } catch(e) { redirectToLogin(); }
       })();
     </script>
     <!-- ── End auth guard ────────────────────────────────────────────────── -->

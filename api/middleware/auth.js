@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const jwtUtils = require('../utils/jwt');
+const { isAdminSelfServiceRequest } = require('../utils/listenerAccess');
 
 // Helper function to get allowed admin emails
 const getAllowedAdminEmails = () => {
@@ -51,7 +52,10 @@ const auth = (requiredRoles = []) => {
         });
       }
 
-      if (['admin', 'editor'].includes(user.role) && !req.isAdminListener) {
+      const adminSelfServiceAllowed = process.env.ADMIN_PATH_MODE === 'true' &&
+        isAdminSelfServiceRequest(req.method, req.originalUrl || req.path);
+      if (['admin', 'editor'].includes(user.role) &&
+          !req.isAdminListener && !adminSelfServiceAllowed) {
         return res.status(404).json({
           success: false,
           message: 'Not found'

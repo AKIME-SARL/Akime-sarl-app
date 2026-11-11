@@ -24,6 +24,8 @@ const {
 } = require('./api/utils/listenerAccess');
 const { isSafeFilename } = require('./api/utils/validation');
 const { adminOnly } = require('./api/middleware/auth');
+const { createMcpRequestHandler } = require('./api/utils/mcpServer');
+const { acceptsMarkdown, homepageLinkHeader } = require('./api/utils/agentContent');
 
 // ── Crash handlers ────────────────────────────────────────────
 process.on('uncaughtException',  (err) => console.error('❌ Uncaught Exception:', err.message));
@@ -174,12 +176,42 @@ app.use(xss());
 // ── Logger ────────────────────────────────────────────────────
 app.use(morgan(isProd ? 'combined' : 'dev'));
 
+// ── Public machine-readable resources ─────────────────────────
+app.get('/.well-known/mcp/server-card.json', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.sendFile(path.join(__dirname, 'public', 'mcp', 'server-card.json'));
+});
+
+app.post('/mcp', createMcpRequestHandler());
+
+app.get('/mcp', (req, res) => {
+  res.set('Allow', 'POST');
+  res.status(405).json({ error: 'Streamable HTTP GET is not supported' });
+});
+app.delete('/mcp', (req, res) => {
+  res.set('Allow', 'POST');
+  res.status(405).json({ error: 'Session termination is not supported' });
+});
+
 // ── Static files ─────────────────────────────────────────────
+app.get('/', (req, res, next) => {
+  if (req.isAdminListener) return next();
+  res.set('Link', homepageLinkHeader);
+  if (acceptsMarkdown(req.get('Accept') || '')) {
+    return res.type('text/markdown').sendFile(path.join(__dirname, 'public', 'index.md'));
+  }
+  next();
+});
+
 app.get('/', (req, res) => {
   if (req.isAdminListener) {
     return res.redirect(302, `${BASE_URL.replace(/\/+$/, '')}/`);
   }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/index.md', (req, res) => {
+  res.type('text/markdown').sendFile(path.join(__dirname, 'public', 'index.md'));
 });
 
 app.get('/admin-access', (req, res) => {

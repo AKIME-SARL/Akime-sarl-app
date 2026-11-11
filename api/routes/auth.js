@@ -9,6 +9,7 @@ const jwtUtils = require('../utils/jwt');
 const { createMongoRateLimitStore } = require('../utils/mongoRateLimitStore');
 const { authenticated, adminOnly, adminOrEditor, sensitiveOperation } = require('../middleware/auth');
 const auditLog = require('../middleware/auditLog');
+const { isAdminSelfServiceRequest } = require('../utils/listenerAccess');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
@@ -476,7 +477,10 @@ router.post('/google', generalAuthLimiter, async (req, res) => {
     if (!user.isActive || user.isLocked) {
       return res.status(401).json({ success: false, message: 'Account is unavailable' });
     }
-    if (['admin', 'editor'].includes(user.role) && !req.isAdminListener) {
+    const adminSelfServiceAllowed = process.env.ADMIN_PATH_MODE === 'true' &&
+      isAdminSelfServiceRequest(req.method, req.originalUrl || req.path);
+    if (['admin', 'editor'].includes(user.role) &&
+        !req.isAdminListener && !adminSelfServiceAllowed) {
       return res.status(404).json({ success: false, message: 'Not found' });
     }
     if (user.twoFactorEnabled && !user.twoFactorSecret) {

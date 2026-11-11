@@ -1,0 +1,31 @@
+# A-KIME Sarl
+
+> A-KIME Sarl est une entreprise camerounaise basée à Yaoundé, spécialisée dans le génie civil, la construction métallique, la finition, la rénovation, le nettoyage des entreprises et le traitement des eaux.
+
+## Pages
+
+- [Accueil](https://a-kime.com/)
+- [À propos](https://a-kime.com/#about)
+- [Services](https://a-kime.com/#services)
+- [Réalisations](https://a-kime.com/#portfolio)
+- [Contact et demande de devis](https://a-kime.com/#contact)
+- [Mentions légales et confidentialité](https://a-kime.com/mentions-legales.html)
+
+## Contact
+
+- Téléphone : +237 691 843 002
+- Email : infosakime@gmail.com
+- Localisation : Yaoundé, Cameroun
+
+## Profils officiels
+
+- [Facebook](https://facebook.com/akime)
+- [LinkedIn](https://linkedin.com/company/akime)
+
+## Formats machine-readable
+
+- [Version Markdown de l'accueil](https://a-kime.com/index.md)
+- [Données publiques de l'entreprise](https://a-kime.com/data/business-info.json)
+- [Sitemap XML](https://a-kime.com/sitemap.xml)
+- [MCP Server Card](https://a-kime.com/.well-known/mcp/server-card.json)
+- [MCP Streamable HTTP endpoint](https://a-kime.com/mcp)

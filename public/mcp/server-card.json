@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+  "name": "com.a-kime/website",
+  "version": "6.2.0",
+  "title": "A-KIME Sarl Public Information Server",
+  "description": "Read public business information, services and contact details for A-KIME Sarl in Cameroon.",
+  "websiteUrl": "https://a-kime.com/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://a-kime.com/mcp"
+    }
+  ],
+  "serverInfo": {
+    "name": "com.a-kime/website",
+    "version": "6.2.0",
+    "title": "A-KIME Sarl Public Information Server"
+  },
+  "transport": {
+    "type": "streamable-http",
+    "url": "https://a-kime.com/mcp"
+  },
+  "capabilities": {
+    "tools": {}
+  },
+  "tools": [
+    {
+      "name": "get_business_info",
+      "description": "Returns public company information, services and contact links for A-KIME Sarl."
+    }
+  ],
+  "authentication": {
+    "required": false,
+    "schemes": []
+  }
+}
