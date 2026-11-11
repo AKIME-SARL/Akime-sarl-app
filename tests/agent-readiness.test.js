@@ -99,7 +99,14 @@ test('contact and legal pages use the shared responsive styles and legal page de
   assert.match(legal, /akime_refresh/);
   assert.match(legal, /localStorage/);
   assert.match(legal, /sessionStorage/);
-  assert.match(legal, /ni cookies publicitaires ni cookies de mesure d'audience/);
+  assert.match(legal, /aucun cookie facultatif de publicité ou de mesure d'audience/);
+  assert.match(legal, /akime_cookie_consent_v1/);
+  assert.match(legal, /Modifier mes préférences cookies/);
+  const consentScript = readPublicFile('js/cookie-consent.js');
+  assert.match(consentScript, /textContent = 'Accepter'/);
+  assert.match(consentScript, /textContent = 'Refuser'/);
+  assert.match(consentScript, /localStorage\.setItem\(consentKey, choice\)/);
+  assert.match(contact, /data-cookie-preferences/);
 });
 
 test('Markdown negotiation requires an explicit positive text/markdown preference', () => {
