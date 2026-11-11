@@ -11,6 +11,7 @@ const xss           = require('xss-clean');
 const dbConnection  = require('./api/utils/database');
 const { createMongoRateLimitStore, initializeMongoRateLimitStores } = require('./api/utils/mongoRateLimitStore');
 const {
+  assertAdminPathMode,
   assertMongoTlsEnabled,
   getAdminLoginUrl,
   isPrivateAdminHost
@@ -41,6 +42,7 @@ const {
 const isProd = NODE_ENV === 'production';
 const trustProxy = process.env.TRUST_PROXY === 'true';
 const singlePortMode = process.env.SINGLE_PORT_MODE === 'true';
+const adminPathMode = process.env.ADMIN_PATH_MODE === 'true';
 const publicPort = Number(PORT);
 const adminPort = Number(ADMIN_PORT);
 const adminHost = ADMIN_HOST.trim();
@@ -66,6 +68,7 @@ function validateSecurityConfiguration() {
     }
   }
   adminLoginUrl = getAdminLoginUrl(ADMIN_URL, isProd);
+  assertAdminPathMode(adminPathMode, singlePortMode, ADMIN_URL, BASE_URL);
   adminHostname = new URL(adminLoginUrl).hostname;
   const minSecretLength = 64;
   if (!MONGODB_URI) throw new Error('MONGODB_URI must be configured');
@@ -110,7 +113,9 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
   const adminListener = singlePortMode
-    ? isAdminHostname(req.hostname, adminHostname)
+    ? (adminPathMode
+        ? isAdminOnlyRequest(req.method, req.path)
+        : isAdminHostname(req.hostname, adminHostname))
     : req.socket.localPort === adminPort;
   req.isAdminListener = adminListener;
   if (!adminListener && isAdminOnlyRequest(req.method, req.path)) {
