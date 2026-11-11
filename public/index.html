@@ -15,7 +15,7 @@
     "@context": "https://schema.org",
     "@graph": [
       {
-        "@type": "GeneralContractor",
+        "@type": ["Organization", "LocalBusiness", "GeneralContractor"],
         "@id": "https://a-kime.com/#organization",
         "name": "A-KIME Sarl",
         "url": "https://a-kime.com/",
@@ -23,6 +23,13 @@
         "description": "Entreprise camerounaise proposant des services de génie civil, construction métallique, finition, rénovation, nettoyage et traitement des eaux.",
         "telephone": "+237691843002",
         "email": "infosakime@gmail.com",
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "telephone": "+237691843002",
+          "email": "infosakime@gmail.com",
+          "contactType": "customer service",
+          "availableLanguage": ["French"]
+        },
         "address": {
           "@type": "PostalAddress",
           "addressLocality": "Yaoundé",
@@ -501,7 +508,7 @@
           <li><a href="/#services">Nos Services</a></li>
           <li><a href="/#portfolio">Réalisations</a></li>
           <li><a href="/#about">À Propos</a></li>
-          <li><a href="/#contact">Contact</a></li>
+          <li><a href="/contact.html">Contact</a></li>
           <li><a href="/mentions-legales.html">Mentions légales & confidentialité</a></li>
         </ul>
       </div>
@@ -518,6 +525,7 @@
       <span>© 2026 A-KIME Construction & Services. Tous droits réservés.</span>
       <div class="footer-bottom-links">
         <a href="/mentions-legales.html">Mentions légales</a>
+        <a href="/contact.html">Contact</a>
         <a href="/mentions-legales.html#confidentialite">Confidentialité</a>
       </div>
     </div>
