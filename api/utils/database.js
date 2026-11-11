@@ -13,6 +13,10 @@ class DatabaseConnection {
       return;
     }
 
+    if (typeof uri !== 'string' || uri.trim() === '') {
+      throw new Error('MONGODB_URI is not configured. Set it in the process environment or .env file.');
+    }
+
     const defaultOptions = {
       serverSelectionTimeoutMS: 10000, // 10 second timeout
       socketTimeoutMS: 45000, // 45 second socket timeout
