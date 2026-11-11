@@ -41,7 +41,7 @@
 
       <section class="info-card legal-section" id="cookies" aria-labelledby="cookies-title">
         <h2 id="cookies-title"><span class="legal-section-number">03</span>Cookies et stockage dans le navigateur</h2>
-        <p>Le site n'utilise actuellement ni cookies publicitaires ni cookies de mesure d'audience. Il utilise un cookie strictement nécessaire à l'authentification de l'espace d'administration :</p>
+        <p>Le site n'utilise actuellement aucun cookie facultatif de publicité ou de mesure d'audience. Le choix « Accepter » ou « Refuser » du bandeau concerne les cookies facultatifs futurs. Un cookie strictement nécessaire à l'authentification de l'espace d'administration reste actif, car il est indispensable à cette fonctionnalité :</p>
         <div class="cookie-table-wrap">
           <table class="cookie-table">
             <thead>
@@ -56,7 +56,8 @@
             </tbody>
           </table>
         </div>
-        <p>Le choix de langue du site est conservé dans le stockage local du navigateur (<code>localStorage</code>) et non dans un cookie. L'espace d'administration conserve le jeton d'accès dans le stockage de session du navigateur (<code>sessionStorage</code>), également hors cookies. Ces données peuvent être supprimées depuis les paramètres du navigateur.</p>
+        <p>Votre choix du bandeau est mémorisé dans le stockage local du navigateur (<code>localStorage</code>) sous la clé <code>akime_cookie_consent_v1</code>. Le choix de langue du site est également conservé dans <code>localStorage</code>, et l'espace d'administration conserve le jeton d'accès dans le stockage de session (<code>sessionStorage</code>). Ces données peuvent être supprimées depuis les paramètres du navigateur.</p>
+        <p><button class="cookie-preferences-link" type="button" data-cookie-preferences>Modifier mes préférences cookies</button></p>
       </section>
 
       <nav class="info-page-links" aria-label="Liens utiles">
@@ -66,7 +67,11 @@
       </nav>
     </div>
 
-    <footer class="info-page-footer">© 2026 A-KIME Sarl · <a href="/contact.html">Nous contacter</a></footer>
+    <footer class="info-page-footer">
+      © 2026 A-KIME Sarl · <a href="/contact.html">Nous contacter</a>
+      · <button class="cookie-preferences-link" type="button" data-cookie-preferences>Préférences cookies</button>
+    </footer>
   </main>
+  <script src="/js/cookie-consent.js"></script>
 </body>
 </html>
