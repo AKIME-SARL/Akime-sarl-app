@@ -83,6 +83,25 @@ test('LLM index, Markdown homepage and legal page are present and linked', () =>
   assert.match(contact, /href="\/#contact"/);
 });
 
+test('contact and legal pages use the shared responsive styles and legal page describes cookies', () => {
+  const contact = readPublicFile('contact.html');
+  const legal = readPublicFile('mentions-legales.html');
+  const css = readPublicFile('css/style.css');
+  assert.match(contact, /class="info-page"/);
+  assert.match(legal, /class="info-page"/);
+  assert.match(contact, /href="\/css\/style\.css"/);
+  assert.match(legal, /href="\/css\/style\.css"/);
+  assert.match(css, /\.info-page\s*\{/);
+  assert.match(css, /\.contact-card\s*\{/);
+  assert.match(css, /\.legal-section\s+h2/);
+  assert.match(css, /@media \(max-width: 700px\)/);
+  assert.match(legal, /id="cookies"/);
+  assert.match(legal, /akime_refresh/);
+  assert.match(legal, /localStorage/);
+  assert.match(legal, /sessionStorage/);
+  assert.match(legal, /ni cookies publicitaires ni cookies de mesure d'audience/);
+});
+
 test('Markdown negotiation requires an explicit positive text/markdown preference', () => {
   assert.equal(acceptsMarkdown('text/markdown'), true);
   assert.equal(acceptsMarkdown('text/html, text/markdown;q=0.8'), true);

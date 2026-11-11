@@ -9,27 +9,64 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <main class="container" style="padding-top:48px;padding-bottom:48px;">
-    <p><a href="/">A-KIME Sarl</a></p>
-    <h1>Mentions légales et confidentialité</h1>
+  <main class="info-page">
+    <header class="info-page-header">
+      <a class="info-page-brand" href="/" aria-label="A-KIME Sarl, accueil">
+        <img src="/images/logo.png" alt="">
+        <span>A-KIME <strong>Sarl</strong></span>
+      </a>
+      <a class="info-page-home" href="/">Retour au site <span aria-hidden="true">→</span></a>
+    </header>
 
-    <section aria-labelledby="identite">
-      <h2 id="identite">Éditeur du site</h2>
-      <p>Le site <a href="https://a-kime.com/">a-kime.com</a> présente les activités de A-KIME Sarl, entreprise basée à Yaoundé, Cameroun.</p>
-      <ul>
-        <li>Email : <a href="mailto:infosakime@gmail.com">infosakime@gmail.com</a></li>
-        <li>Téléphone : <a href="tel:+237691843002">+237 691 843 002</a></li>
-      </ul>
-      <p>Pour toute question relative au site ou à son contenu, contactez l'entreprise à l'adresse indiquée ci-dessus.</p>
-    </section>
+    <div class="info-page-content legal-content">
+      <p class="info-page-eyebrow">INFORMATIONS DU SITE</p>
+      <h1>Mentions légales et confidentialité</h1>
+      <p class="info-page-intro">Les informations essentielles sur l'éditeur de ce site, les demandes de contact et les technologies de stockage utilisées.</p>
 
-    <section id="confidentialite" aria-labelledby="confidentialite-title">
-      <h2 id="confidentialite-title">Confidentialité et formulaire de contact</h2>
-      <p>Le formulaire de contact peut transmettre votre nom, votre adresse email, votre numéro de téléphone et les détails de votre projet. Ces informations sont utilisées pour recevoir et traiter votre demande et vous répondre.</p>
-      <p>Ne transmettez pas de données personnelles concernant une autre personne sans son accord. Pour toute question au sujet des informations envoyées via le formulaire, contactez A-KIME Sarl par email.</p>
-    </section>
+      <section class="info-card legal-section" aria-labelledby="identite">
+        <h2 id="identite"><span class="legal-section-number">01</span>Éditeur du site</h2>
+        <p>Le site <a href="https://a-kime.com/">a-kime.com</a> présente les activités de A-KIME Sarl, entreprise basée à Yaoundé, Cameroun.</p>
+        <ul class="legal-contact-list">
+          <li><span>Email</span><a href="mailto:infosakime@gmail.com">infosakime@gmail.com</a></li>
+          <li><span>Téléphone</span><a href="tel:+237691843002">+237 691 843 002</a></li>
+        </ul>
+        <p>Pour toute question relative au site ou à son contenu, contactez l'entreprise à l'adresse indiquée ci-dessus.</p>
+      </section>
 
-    <p><a href="/">Retour à l'accueil</a> · <a href="/#about">À propos</a> · <a href="/#contact">Contact</a></p>
+      <section class="info-card legal-section" id="confidentialite" aria-labelledby="confidentialite-title">
+        <h2 id="confidentialite-title"><span class="legal-section-number">02</span>Confidentialité et formulaire de contact</h2>
+        <p>Le formulaire de contact peut transmettre votre nom, votre adresse email, votre numéro de téléphone et les détails de votre projet. Ces informations sont utilisées pour recevoir et traiter votre demande et vous répondre.</p>
+        <p>Ne transmettez pas de données personnelles concernant une autre personne sans son accord. Pour toute question au sujet des informations envoyées via le formulaire, contactez A-KIME Sarl par email.</p>
+      </section>
+
+      <section class="info-card legal-section" id="cookies" aria-labelledby="cookies-title">
+        <h2 id="cookies-title"><span class="legal-section-number">03</span>Cookies et stockage dans le navigateur</h2>
+        <p>Le site n'utilise actuellement ni cookies publicitaires ni cookies de mesure d'audience. Il utilise un cookie strictement nécessaire à l'authentification de l'espace d'administration :</p>
+        <div class="cookie-table-wrap">
+          <table class="cookie-table">
+            <thead>
+              <tr><th scope="col">Nom</th><th scope="col">Finalité</th><th scope="col">Durée</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>akime_refresh</code></td>
+                <td>Renouveler la session d'un utilisateur connecté à l'administration. Cookie HttpOnly, sécurisé en production, limité au chemin <code>/api/auth</code>.</td>
+                <td>Selon la configuration de la session (7 jours par défaut)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Le choix de langue du site est conservé dans le stockage local du navigateur (<code>localStorage</code>) et non dans un cookie. L'espace d'administration conserve le jeton d'accès dans le stockage de session du navigateur (<code>sessionStorage</code>), également hors cookies. Ces données peuvent être supprimées depuis les paramètres du navigateur.</p>
+      </section>
+
+      <nav class="info-page-links" aria-label="Liens utiles">
+        <a href="/">Retour à l'accueil</a>
+        <a href="/#about">À propos</a>
+        <a href="/contact.html">Contact</a>
+      </nav>
+    </div>
+
+    <footer class="info-page-footer">© 2026 A-KIME Sarl · <a href="/contact.html">Nous contacter</a></footer>
   </main>
 </body>
 </html>
