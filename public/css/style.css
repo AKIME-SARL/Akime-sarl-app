@@ -1944,3 +1944,211 @@ table tr:hover td { background: rgba(200,169,81,.04); }
   .hero-c { width: 160px; height: 160px; border-width: 30px; right: 10px; }
   .hero-c-inner { width: 60px; height: 60px; border-width: 15px; }
 }
+
+/* ── Public information pages ───────────────────────────────── */
+.info-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at 10% 12%, rgba(201,168,76,.13), transparent 34rem),
+    var(--background);
+}
+.info-page-header {
+  min-height: 82px;
+  padding: 14px max(24px, calc((100vw - 1120px) / 2));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  background: rgba(255,255,255,.94);
+  border-bottom: 1px solid var(--border);
+}
+.info-page-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--primary);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.info-page-brand img { width: 46px; height: 46px; object-fit: contain; }
+.info-page-brand strong { color: var(--gold-dark); }
+.info-page-home {
+  color: var(--primary);
+  font-size: .88rem;
+  font-weight: 700;
+  transition: color var(--transition);
+}
+.info-page-home:hover,
+.info-page-links a:hover,
+.info-page-footer a:hover { color: var(--gold-dark); }
+.info-page-content {
+  width: min(100% - 40px, 880px);
+  margin: 0 auto;
+  padding: clamp(44px, 8vw, 86px) 0 72px;
+}
+.info-page-eyebrow {
+  margin-bottom: 12px;
+  color: var(--gold-dark);
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+.info-page-content > h1 {
+  max-width: 760px;
+  margin-bottom: 16px;
+  color: var(--primary);
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  font-weight: 800;
+  letter-spacing: -.045em;
+  line-height: 1.12;
+}
+.info-page-intro {
+  max-width: 700px;
+  margin-bottom: 36px;
+  color: var(--muted-foreground);
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+.info-card {
+  margin-top: 20px;
+  padding: clamp(22px, 4vw, 34px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+.contact-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.contact-card-item {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 12px;
+  color: var(--primary);
+  border-radius: var(--radius-md);
+}
+a.contact-card-item { transition: background var(--transition), transform var(--transition); }
+a.contact-card-item:hover { background: var(--background); transform: translateY(-2px); }
+.contact-card-icon {
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: rgba(201,168,76,.2);
+  border-radius: 50%;
+  font-size: 1.2rem;
+}
+.contact-card-item > span:last-child { min-width: 0; display: grid; gap: 6px; }
+.contact-card-label {
+  color: var(--muted-foreground);
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.contact-card-item strong { overflow-wrap: anywhere; font-size: .9rem; }
+.contact-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.contact-cta h2 { margin-bottom: 8px; color: var(--white); font-size: 1.3rem; }
+.contact-cta p { max-width: 540px; color: rgba(255,255,255,.76); font-size: .92rem; line-height: 1.7; }
+.info-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px;
+  color: var(--primary);
+  background: var(--gold);
+  border-radius: var(--radius-sm);
+  font-size: .86rem;
+  font-weight: 800;
+  transition: background var(--transition), transform var(--transition);
+}
+.info-button:hover { background: var(--gold-light); transform: translateY(-2px); }
+.info-page-links {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.info-page-links a,
+.info-page-footer a { color: var(--primary); font-size: .86rem; font-weight: 700; }
+.info-page-footer {
+  padding: 22px 24px;
+  color: var(--muted-foreground);
+  background: rgba(255,255,255,.8);
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: .82rem;
+}
+.legal-content { max-width: 900px; }
+.legal-section h2 {
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  color: var(--primary);
+  font-size: clamp(1.15rem, 3vw, 1.42rem);
+  line-height: 1.4;
+}
+.legal-section-number {
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: rgba(201,168,76,.22);
+  border-radius: 50%;
+  font-size: .72rem;
+  letter-spacing: .02em;
+}
+.legal-section p,
+.legal-section li {
+  color: var(--muted-foreground);
+  font-size: .94rem;
+  line-height: 1.8;
+}
+.legal-section p + p { margin-top: 12px; }
+.legal-section a { color: var(--primary); font-weight: 700; text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; }
+.legal-contact-list { margin: 16px 0; display: grid; gap: 8px; }
+.legal-contact-list li { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.legal-contact-list li > span { min-width: 90px; color: var(--primary); font-weight: 700; }
+.cookie-table-wrap { margin: 20px 0; overflow-x: auto; }
+.cookie-table { width: 100%; border-collapse: collapse; text-align: left; }
+.cookie-table th,
+.cookie-table td { min-width: 120px; padding: 13px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.cookie-table th { color: var(--primary); background: var(--background); font-size: .78rem; }
+.cookie-table td { color: var(--muted-foreground); font-size: .84rem; line-height: 1.65; }
+.cookie-table td:first-child { color: var(--primary); font-weight: 700; }
+.cookie-table code,
+.legal-section code {
+  padding: 2px 5px;
+  color: var(--primary);
+  background: var(--background);
+  border-radius: 4px;
+  font-size: .82em;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .info-page-header { min-height: 70px; padding-inline: 20px; }
+  .info-page-content { width: min(100% - 32px, 880px); padding-top: 48px; }
+  .contact-card { grid-template-columns: 1fr; gap: 2px; }
+  .contact-card-item { padding: 12px 8px; }
+  .contact-cta { align-items: flex-start; flex-direction: column; gap: 20px; }
+  .cookie-table th,
+  .cookie-table td { padding: 10px 8px; }
+}
