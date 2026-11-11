@@ -19,7 +19,7 @@ Non inclus dans ce push (à venir) :
 
 | Couche | Technologie |
 |--------|-------------|
-| Runtime | Node.js ≥ 18 LTS |
+| Runtime | Node.js ≥ 22 |
 | Framework | Express 4.x |
 | Base de données | MongoDB + Mongoose |
 | Auth | JWT (jsonwebtoken + bcryptjs) |
@@ -67,9 +67,9 @@ npm start
 
 GitHub Actions exécute les vérifications sur les pushes vers `main` et `develop`,
 les pull requests, ainsi que sur lancement manuel. Le workflow installe les
-dépendances verrouillées, vérifie la syntaxe de tous les fichiers JavaScript et
-lance les tests unitaires sur Node.js 18, 20, 22 et 24 avec des runners
-GitHub-hosted.
+dépendances verrouillées, vérifie la syntaxe de tous les fichiers JavaScript,
+lance les tests unitaires sur Node.js 22 et 24 et vérifie les dépendances
+contre les avis de sécurité npm avec des runners GitHub-hosted.
 
 Ce dépôt est privé : les exécutions consomment les minutes incluses dans le
 forfait GitHub du propriétaire du dépôt. Elles ne sont donc gratuites que dans
@@ -84,12 +84,68 @@ dans ce workflow sans service de test dédié.
 Le workflow `Secret scan` existant utilise également un runner GitHub-hosted et
 compte dans la même allocation du forfait.
 
+## Mises à jour de dépendances vulnérables
+
+Dependabot vérifie chaque semaine les dépendances npm (`package.json` et
+`package-lock.json`) et les versions de GitHub Actions. Il ouvre des pull
+requests de mise à jour; les mises à jour npm mineures et correctives sont
+regroupées pour limiter le nombre de pull requests. Chaque pull request passe
+par les tests CI. Les changements restent à examiner et à fusionner par un
+mainteneur; les dépendances ne sont pas mises à jour silencieusement en
+production.
+
+Pour que GitHub ouvre également des pull requests dédiées lorsqu'une
+vulnérabilité connue est détectée, un administrateur doit activer la **Dependency
+graph**, **Dependabot alerts** et **Dependabot security updates** dans
+**Settings → Security → Code security and analysis**. La configuration dans
+`.github/dependabot.yml` active les mises à jour planifiées, mais ne peut pas
+activer ces réglages de sécurité du dépôt.
+
+Dependabot est un service GitHub et ne requiert pas de runner ou de workflow CI
+supplémentaire pour vérifier les mises à jour. Toutefois, les pull requests
+Dependabot déclenchent le workflow CI GitHub-hosted existant et utilisent les
+minutes Actions incluses au forfait du dépôt privé.
+
 ## Accès admin
 
 1. S'assurer que l'email est dans `ALLOWED_ADMIN_EMAILS` dans `.env`
 2. Lancer `npm run fix-admin-roles`
-3. Aller sur `/admin/login` ou `/admin`
+3. En production, configurer un reverse proxy HTTPS privé vers
+   `http://127.0.0.1:4001`, puis ouvrir l'URL de l'hôte admin (par exemple
+   `https://admin.example.com`). Le port admin ne doit pas être exposé
+   directement à Internet. Définir `ADMIN_URL` sur cette URL HTTPS pour que le
+   lien « Espace pro » du site public y redirige.
+   En développement, définir `ADMIN_URL=http://localhost:4001` et ouvrir
+   `http://localhost:4001/admin/login`.
 4. Se connecter — le panel redirige automatiquement les non-admins
+
+Pour un hébergement Node.js qui ne fournit qu'un seul port (par exemple un
+hébergement géré), définir `SINGLE_PORT_MODE=true`. Le fournisseur doit router
+le domaine public et le domaine admin vers la même application; l'application
+reconnaît l'interface admin grâce au nom d'hôte configuré dans `ADMIN_URL`.
+Définir également `BASE_URL`, `ADMIN_URL`, `PORT` et `ORIGIN` avec les valeurs
+de production, et inclure les deux origines HTTPS dans `ORIGIN`.
+
+Si l'hébergement ne permet pas d'ajouter un second domaine ou sous-domaine,
+définir aussi `ADMIN_PATH_MODE=true`. Dans ce mode, l'espace admin est servi
+sur le même domaine à `/admin/login` et l'accès aux routes admin est déterminé
+par leur chemin. `ADMIN_URL` doit être identique à `BASE_URL`, et `ORIGIN` doit
+contenir l'origine HTTPS du site. Exemple :
+
+```env
+SINGLE_PORT_MODE=true
+ADMIN_PATH_MODE=true
+BASE_URL=https://a-kime.com
+ADMIN_URL=https://a-kime.com
+ORIGIN=https://a-kime.com
+TRUST_PROXY=true
+```
+
+Le port `PORT` doit être celui fourni par l'hébergeur. `ADMIN_PATH_MODE` n'est
+compatible qu'avec `SINGLE_PORT_MODE=true`.
+
+Un exemple de configuration Nginx avec deux hôtes HTTPS et Certbot est
+disponible dans [`documentations/NGINX-DEPLOYMENT.md`](./documentations/NGINX-DEPLOYMENT.md).
 
 ## Gestion privée des projets
 
@@ -118,6 +174,8 @@ JWT_SECRET=votre_secret_long
 JWT_REFRESH_SECRET=votre_refresh_secret_long
 ALLOWED_ADMIN_EMAILS=admin@akime.cm,infosakime@gmail.com
 PORT=4000
+ADMIN_PORT=4001
+ADMIN_HOST=127.0.0.1
 NODE_ENV=development
 EMAIL_HOST=smtp.gmail.com
 EMAIL_PORT=587

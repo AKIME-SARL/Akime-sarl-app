@@ -26,10 +26,70 @@ deployment workflow or hosting platform must inject these values into the
 application process; GitHub Secrets are not automatically runtime environment
 variables.
 
+In production, use a MongoDB URI with TLS enabled (`mongodb+srv://` or
+`tls=true`). The application rejects a production MongoDB URI without TLS.
+Use a dedicated database user limited to `readWrite` on the application
+database; do not use an Atlas organization, project, or cluster administrator
+credential for the application.
+
+Rate-limit counters for API and authentication endpoints are stored in the
+MongoDB `rate_limits` collection, so limits are shared by all application
+instances. The application creates a TTL index on startup; the runtime
+database user must have permission to create indexes. Keep this collection in
+the application database and do not give the application user broader
+database access to support it.
+
+Backups contain production data and must be encrypted at rest, access
+restricted, retained outside the application host, and periodically tested
+with a restore. The local `backups/` directory being Git-ignored does not make
+it a safe production backup destination.
+
+Privileged `admin` and `editor` accounts must enable TOTP-based MFA before
+they receive an ordinary login session. On their first password login, the
+admin page guides the user through enrollment. MFA verification is also
+rate-limited.
+
+By default, the public website listens on `PORT` (default `4000`). The admin
+interface and its management APIs listen separately on `ADMIN_PORT` (default
+`4001`), bound to `ADMIN_HOST` (default `127.0.0.1`). The public listener
+rejects admin pages and privileged API routes; the admin listener rejects
+public website pages. Do not bind the admin listener to a public interface.
+Put a trusted HTTPS reverse proxy on the same host in front of the private
+admin listener, or use a VPN. If the proxy runs in another container, bind only
+to a private container-network address and firewall the port so only the proxy
+can reach it. Never publish `ADMIN_PORT` directly to the internet.
+
+For managed hosting that routes both public and admin domains to one Node.js
+port, set `SINGLE_PORT_MODE=true`. The app listens only on `PORT` and selects
+the admin surface by matching the request hostname to the hostname in
+`ADMIN_URL`. Configure the hosting provider to route both domains to the app,
+set `ADMIN_URL` to the admin HTTPS origin, and include both HTTPS origins in
+`ORIGIN`. Keep admin accounts protected by MFA; hostname routing is not a
+replacement for authentication.
+
+Configure the reverse proxy to forward the admin hostname to
+`http://127.0.0.1:4001`, and enable `TRUST_PROXY=true` only when requests can
+reach the app through that trusted proxy. Admins must open the admin hostname,
+not the public website hostname. Production startup rejects a public
+`ADMIN_HOST`; loopback and private-network bind addresses are accepted. Include
+both public and admin HTTPS origins in `ORIGIN` if the browser makes
+cross-origin API requests.
+Set `BASE_URL` to the public website HTTPS URL; links from the admin interface
+back to the website use this value.
+Set `ADMIN_URL` to the HTTPS hostname served by the trusted proxy (for example
+`https://admin.example.com`). The public website's Espace pro link redirects
+there; the admin listener itself remains private and must not be exposed
+directly.
+See [NGINX-DEPLOYMENT.md](./NGINX-DEPLOYMENT.md) for a VPS Nginx and
+Let's Encrypt setup example.
+
 Repository administrators should also enable GitHub's native **Secret
 scanning** and **Push protection** under **Settings → Advanced Security** when
 GitHub Secret Protection is available for the organization. Those account-level
 settings cannot be enabled by a repository file.
+
+The Gitleaks workflow uses a versioned scanner image rather than the floating
+`latest` tag. Review and update that pinned version periodically.
 
 ## If a secret is exposed
 

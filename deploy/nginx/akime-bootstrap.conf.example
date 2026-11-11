@@ -1,0 +1,18 @@
+# Temporary HTTP-only configuration used to issue the initial Let's Encrypt
+# certificate. Replace all example hostnames before enabling this file.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example.com www.example.com admin.example.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 404;
+    }
+}
