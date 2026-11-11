@@ -9,6 +9,7 @@
 - [Services](https://a-kime.com/#services)
 - [Réalisations](https://a-kime.com/#portfolio)
 - [Contact et demande de devis](https://a-kime.com/#contact)
+- [Page contact](https://a-kime.com/contact.html)
 - [Mentions légales et confidentialité](https://a-kime.com/mentions-legales.html)
 
 ## Contact

@@ -27,9 +27,16 @@ test('sitemap lists only published public pages with valid absolute URLs', () =>
   const urls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(([, url]) => url);
   assert.deepEqual(urls, [
     'https://a-kime.com/',
-    'https://a-kime.com/mentions-legales.html'
+    'https://a-kime.com/mentions-legales.html',
+    'https://a-kime.com/contact.html'
   ]);
   for (const url of urls) assert.doesNotThrow(() => new URL(url));
+  const lastmods = [...sitemap.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map(([, date]) => date);
+  assert.equal(lastmods.length, urls.length);
+  for (const date of lastmods) {
+    assert.match(date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(!Number.isNaN(Date.parse(date)));
+  }
   assert.match(sitemap, /<\/urlset>\s*$/);
 });
 
@@ -40,17 +47,23 @@ test('homepage metadata and JSON-LD identify the business, website and services'
   const [, jsonLd] = html.match(/<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/) || [];
   assert.ok(jsonLd, 'homepage JSON-LD block should exist');
   const graph = JSON.parse(jsonLd)['@graph'];
-  assert.ok(graph.some(node => node['@type'] === 'GeneralContractor'));
+  const company = graph.find(node =>
+    Array.isArray(node['@type']) &&
+    node['@type'].includes('LocalBusiness') &&
+    node['@type'].includes('Organization')
+  );
+  assert.ok(company);
+  assert.ok(company.contactPoint);
   assert.ok(graph.some(node => node['@type'] === 'WebSite'));
   assert.ok(graph.some(node => node['@type'] === 'WebPage'));
   assert.ok(graph.some(node => node['@type'] === 'Service'));
-  const company = graph.find(node => node['@type'] === 'GeneralContractor');
   assert.deepEqual(company.sameAs, [
     'https://facebook.com/akime',
     'https://linkedin.com/company/akime'
   ]);
   assert.match(html, /href="\/#about"/);
-  assert.match(html, /href="\/#contact"/);
+  assert.match(html, /href="#contact"/);
+  assert.match(html, /href="\/contact\.html">Contact<\/a>/);
   assert.match(html, /href="\/mentions-legales\.html"/);
 });
 
@@ -58,11 +71,16 @@ test('LLM index, Markdown homepage and legal page are present and linked', () =>
   const llms = readPublicFile('llms.txt');
   const markdown = readPublicFile('index.md');
   const legal = readPublicFile('mentions-legales.html');
+  const contact = readPublicFile('contact.html');
   assert.match(llms, /https:\/\/a-kime\.com\/#about/);
   assert.match(llms, /https:\/\/a-kime\.com\/#contact/);
+  assert.match(llms, /https:\/\/a-kime\.com\/contact\.html/);
   assert.match(llms, /https:\/\/a-kime\.com\/mentions-legales\.html/);
   assert.match(markdown, /^# A-KIME Sarl/m);
   assert.match(legal, /id="confidentialite"/);
+  assert.match(contact, /tel:\+237691843002/);
+  assert.match(contact, /mailto:infosakime@gmail\.com/);
+  assert.match(contact, /href="\/#contact"/);
 });
 
 test('Markdown negotiation requires an explicit positive text/markdown preference', () => {
