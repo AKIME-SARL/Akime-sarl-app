@@ -126,6 +126,24 @@ reconnaît l'interface admin grâce au nom d'hôte configuré dans `ADMIN_URL`.
 Définir également `BASE_URL`, `ADMIN_URL`, `PORT` et `ORIGIN` avec les valeurs
 de production, et inclure les deux origines HTTPS dans `ORIGIN`.
 
+Si l'hébergement ne permet pas d'ajouter un second domaine ou sous-domaine,
+définir aussi `ADMIN_PATH_MODE=true`. Dans ce mode, l'espace admin est servi
+sur le même domaine à `/admin/login` et l'accès aux routes admin est déterminé
+par leur chemin. `ADMIN_URL` doit être identique à `BASE_URL`, et `ORIGIN` doit
+contenir l'origine HTTPS du site. Exemple :
+
+```env
+SINGLE_PORT_MODE=true
+ADMIN_PATH_MODE=true
+BASE_URL=https://a-kime.com
+ADMIN_URL=https://a-kime.com
+ORIGIN=https://a-kime.com
+TRUST_PROXY=true
+```
+
+Le port `PORT` doit être celui fourni par l'hébergeur. `ADMIN_PATH_MODE` n'est
+compatible qu'avec `SINGLE_PORT_MODE=true`.
+
 Un exemple de configuration Nginx avec deux hôtes HTTPS et Certbot est
 disponible dans [`documentations/NGINX-DEPLOYMENT.md`](./documentations/NGINX-DEPLOYMENT.md).
 

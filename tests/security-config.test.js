@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  assertAdminPathMode,
   assertMongoTlsEnabled,
   getAdminLoginUrl,
   isPrivateAdminHost
@@ -37,6 +38,24 @@ test('admin login URL is configured as a safe origin and uses HTTPS in productio
   assert.throws(() => getAdminLoginUrl('javascript:alert(1)'), /valid absolute HTTP\(S\) URL/);
   assert.throws(() => getAdminLoginUrl('https://user:pass@admin.example.test'), /only an HTTP\(S\) origin/);
   assert.throws(() => getAdminLoginUrl('https://admin.example.test/path'), /only an HTTP\(S\) origin/);
+});
+
+test('admin path mode requires single-port mode and the same public origin', () => {
+  assert.doesNotThrow(() => assertAdminPathMode(
+    true, true, 'https://a-kime.com', 'https://a-kime.com'
+  ));
+  assert.doesNotThrow(() => assertAdminPathMode(
+    false, false, 'https://admin.a-kime.com', 'https://a-kime.com'
+  ));
+  assert.throws(() => assertAdminPathMode(
+    true, false, 'https://a-kime.com', 'https://a-kime.com'
+  ), /requires SINGLE_PORT_MODE=true/);
+  assert.throws(() => assertAdminPathMode(
+    true, true, 'https://admin.a-kime.com', 'https://a-kime.com'
+  ), /must match/);
+  assert.throws(() => assertAdminPathMode(
+    true, true, 'https://a-kime.com', 'not-an-origin'
+  ), /valid HTTP\(S\) URLs/);
 });
 
 test('admin listener accepts loopback and private network interfaces only', () => {

@@ -59,6 +59,31 @@ function getAdminLoginUrl(value, isProd = false) {
   return new URL('/admin/login', url.origin).toString();
 }
 
+function assertAdminPathMode(enabled, singlePortMode, adminUrl, baseUrl) {
+  if (!enabled) return;
+  if (!singlePortMode) {
+    throw new Error('ADMIN_PATH_MODE requires SINGLE_PORT_MODE=true');
+  }
+
+  let adminOrigin;
+  let baseOrigin;
+  try {
+    const parsedAdminUrl = new URL(adminUrl);
+    const parsedBaseUrl = new URL(baseUrl);
+    if (!['http:', 'https:'].includes(parsedBaseUrl.protocol)) {
+      throw new Error();
+    }
+    adminOrigin = parsedAdminUrl.origin;
+    baseOrigin = parsedBaseUrl.origin;
+  } catch {
+    throw new Error('ADMIN_URL and BASE_URL must be valid HTTP(S) URLs when ADMIN_PATH_MODE=true');
+  }
+
+  if (adminOrigin !== baseOrigin) {
+    throw new Error('ADMIN_URL and BASE_URL must match when ADMIN_PATH_MODE=true');
+  }
+}
+
 function isPrivateAdminHost(host) {
   const normalizedHost = host.trim().toLowerCase();
   if (normalizedHost === 'localhost' || normalizedHost === '::1') return true;
@@ -77,6 +102,7 @@ function isPrivateAdminHost(host) {
 
 module.exports = {
   assertMongoTlsEnabled,
+  assertAdminPathMode,
   getAdminLoginUrl,
   isPrivateAdminHost
 };
