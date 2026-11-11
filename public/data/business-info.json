@@ -1,0 +1,27 @@
+{
+  "name": "A-KIME Sarl",
+  "description": "Entreprise camerounaise proposant des services de génie civil, construction métallique, finition, rénovation, nettoyage et traitement des eaux.",
+  "url": "https://a-kime.com/",
+  "address": {
+    "locality": "Yaoundé",
+    "country": "Cameroun"
+  },
+  "contact": {
+    "telephone": "+237 691 843 002",
+    "email": "infosakime@gmail.com",
+    "quoteUrl": "https://a-kime.com/#contact"
+  },
+  "services": [
+    "Gros œuvre",
+    "Finition et décoration",
+    "Rénovation",
+    "Construction métallique",
+    "Génie civil",
+    "Nettoyage des entreprises",
+    "Traitement des eaux"
+  ],
+  "sameAs": [
+    "https://facebook.com/akime",
+    "https://linkedin.com/company/akime"
+  ]
+}

@@ -9,6 +9,86 @@
   <meta name="apple-mobile-web-app-title" content="A-KIME">
   <title>A-KIME Sarl | Génie Civil & Constructions Métalliques | Cameroun</title>
   <meta name="description" content="A-KIME Sarl — spécialiste en gros œuvre, génie civil, construction métallique, finition, rénovation, nettoyage et traitement des eaux. Depuis 2005.">
+  <link rel="canonical" href="https://a-kime.com/">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "GeneralContractor",
+        "@id": "https://a-kime.com/#organization",
+        "name": "A-KIME Sarl",
+        "url": "https://a-kime.com/",
+        "logo": "https://a-kime.com/images/logo.png",
+        "description": "Entreprise camerounaise proposant des services de génie civil, construction métallique, finition, rénovation, nettoyage et traitement des eaux.",
+        "telephone": "+237691843002",
+        "email": "infosakime@gmail.com",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Yaoundé",
+          "addressCountry": "CM"
+        },
+        "areaServed": {
+          "@type": "Country",
+          "name": "Cameroun"
+        },
+        "sameAs": [
+          "https://facebook.com/akime",
+          "https://linkedin.com/company/akime"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://a-kime.com/#website",
+        "url": "https://a-kime.com/",
+        "name": "A-KIME Sarl",
+        "inLanguage": "fr",
+        "publisher": { "@id": "https://a-kime.com/#organization" }
+      },
+      {
+        "@type": "WebPage",
+        "@id": "https://a-kime.com/#webpage",
+        "url": "https://a-kime.com/",
+        "name": "A-KIME Sarl | Génie Civil & Constructions Métalliques | Cameroun",
+        "description": "A-KIME Sarl — spécialiste en gros œuvre, génie civil, construction métallique, finition, rénovation, nettoyage et traitement des eaux.",
+        "inLanguage": "fr",
+        "isPartOf": { "@id": "https://a-kime.com/#website" },
+        "about": { "@id": "https://a-kime.com/#organization" },
+        "mainEntity": { "@id": "https://a-kime.com/#organization" }
+      },
+      {
+        "@type": "Service",
+        "@id": "https://a-kime.com/#civil-engineering",
+        "name": "Génie civil",
+        "provider": { "@id": "https://a-kime.com/#organization" }
+      },
+      {
+        "@type": "Service",
+        "@id": "https://a-kime.com/#metal-construction",
+        "name": "Construction métallique",
+        "provider": { "@id": "https://a-kime.com/#organization" }
+      },
+      {
+        "@type": "Service",
+        "@id": "https://a-kime.com/#renovation",
+        "name": "Finition et rénovation",
+        "provider": { "@id": "https://a-kime.com/#organization" }
+      },
+      {
+        "@type": "Service",
+        "@id": "https://a-kime.com/#cleaning",
+        "name": "Nettoyage des entreprises",
+        "provider": { "@id": "https://a-kime.com/#organization" }
+      },
+      {
+        "@type": "Service",
+        "@id": "https://a-kime.com/#water-treatment",
+        "name": "Traitement des eaux",
+        "provider": { "@id": "https://a-kime.com/#organization" }
+      }
+    ]
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -396,9 +476,8 @@
     </a>
         <p>Votre partenaire de confiance pour tous vos projets de construction, génie civil et services environnementaux depuis 2016.</p>
         <div class="footer-social">
-          <a href="#" class="social-btn"><i class="fab fa-facebook-f"></i></a>
-          <a href="#" class="social-btn"><i class="fab fa-linkedin-in"></i></a>
-          <a href="#" class="social-btn"><i class="fab fa-instagram"></i></a>
+          <a href="https://facebook.com/akime" class="social-btn" aria-label="A-KIME sur Facebook" rel="me noopener noreferrer" target="_blank"><i class="fab fa-facebook-f"></i></a>
+          <a href="https://linkedin.com/company/akime" class="social-btn" aria-label="A-KIME sur LinkedIn" rel="me noopener noreferrer" target="_blank"><i class="fab fa-linkedin-in"></i></a>
         </div>
       </div>
 
@@ -418,11 +497,12 @@
       <div>
         <div class="footer-col-title">NAVIGATION</div>
         <ul class="footer-links">
-          <li><a href="#hero">Accueil</a></li>
-          <li><a href="#services">Nos Services</a></li>
-          <li><a href="#portfolio">Réalisations</a></li>
-          <li><a href="#about">À Propos</a></li>
-          <li><a href="#contact">Contact</a></li>
+          <li><a href="/#hero">Accueil</a></li>
+          <li><a href="/#services">Nos Services</a></li>
+          <li><a href="/#portfolio">Réalisations</a></li>
+          <li><a href="/#about">À Propos</a></li>
+          <li><a href="/#contact">Contact</a></li>
+          <li><a href="/mentions-legales.html">Mentions légales & confidentialité</a></li>
         </ul>
       </div>
 
@@ -437,8 +517,8 @@
     <div class="footer-bottom">
       <span>© 2026 A-KIME Construction & Services. Tous droits réservés.</span>
       <div class="footer-bottom-links">
-        <a href="#">Mentions légales</a>
-        <a href="#">Politique de confidentialité</a>
+        <a href="/mentions-legales.html">Mentions légales</a>
+        <a href="/mentions-legales.html#confidentialite">Confidentialité</a>
       </div>
     </div>
   </div>
@@ -446,5 +526,6 @@
 
 <script src="js/api.js"></script>
 <script src="js/main.js"></script>
+<script src="js/webmcp.js"></script>
 </body>
 </html>

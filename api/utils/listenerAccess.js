@@ -55,9 +55,21 @@ function isAdminHostname(requestHostname, adminHostname) {
     adminHostname.trim().toLowerCase().replace(/\.$/, '');
 }
 
+function isAdminSelfServiceRequest(method, requestUrl) {
+  const verb = method.toUpperCase();
+  const path = requestUrl.split('?')[0].toLowerCase();
+  return (verb === 'GET' && ['/api/auth/me', '/api/auth/verify'].includes(path)) ||
+    (verb === 'POST' && [
+      '/api/auth/refresh',
+      '/api/auth/logout',
+      '/api/auth/logout-all'
+    ].includes(path));
+}
+
 module.exports = {
   isAdminOnlyRequest,
   isPublicPageRequest,
   selectListenerRateLimiter,
-  isAdminHostname
+  isAdminHostname,
+  isAdminSelfServiceRequest
 };

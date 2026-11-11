@@ -9,7 +9,7 @@
     "create-admin": "node scripts/create-admin.js",
     "test-mongodb": "node scripts/test-mongodb.js",
     "test-db": "node scripts/simple-mongodb-test.js",
-    "test": "node --test tests/delivery-project-model.test.js tests/validation.test.js tests/mongo-rate-limit-store.test.js tests/security-config.test.js tests/listener-access.test.js",
+    "test": "node --test tests/delivery-project-model.test.js tests/validation.test.js tests/mongo-rate-limit-store.test.js tests/security-config.test.js tests/listener-access.test.js tests/agent-readiness.test.js",
     "backup": "node scripts/backup.js",
     "restore": "node scripts/restore.js",
     "seed": "node scripts/seed.js",
@@ -20,6 +20,7 @@
     "security-rotate-jwt": "node scripts/rotate-jwt-secrets.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

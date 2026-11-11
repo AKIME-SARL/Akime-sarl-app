@@ -4,7 +4,8 @@ const {
   isAdminOnlyRequest,
   isPublicPageRequest,
   selectListenerRateLimiter,
-  isAdminHostname
+  isAdminHostname,
+  isAdminSelfServiceRequest
 } = require('../api/utils/listenerAccess');
 
 test('public listener reserves admin pages and management APIs for the admin port', () => {
@@ -62,4 +63,26 @@ test('single-port routing recognizes only the configured admin hostname', () => 
   assert.equal(isAdminHostname('ADMIN.EXAMPLE.COM.', 'admin.example.com'), true);
   assert.equal(isAdminHostname('www.example.com', 'admin.example.com'), false);
   assert.equal(isAdminHostname(undefined, 'admin.example.com'), false);
+});
+
+test('admin path mode permits only shared authentication self-service requests', () => {
+  for (const [method, path] of [
+    ['GET', '/api/auth/me'],
+    ['GET', '/api/auth/verify'],
+    ['POST', '/api/auth/refresh'],
+    ['POST', '/api/auth/logout'],
+    ['POST', '/api/auth/logout-all']
+  ]) {
+    assert.equal(isAdminSelfServiceRequest(method, path), true, `${method} ${path}`);
+  }
+
+  for (const [method, path] of [
+    ['POST', '/api/auth/login'],
+    ['POST', '/api/auth/admin/login'],
+    ['GET', '/api/auth/users'],
+    ['POST', '/api/auth/me/avatar'],
+    ['DELETE', '/api/auth/logout-all']
+  ]) {
+    assert.equal(isAdminSelfServiceRequest(method, path), false, `${method} ${path}`);
+  }
 });

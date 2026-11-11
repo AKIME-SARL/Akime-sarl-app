@@ -48,7 +48,7 @@ class AdminDashboard {
     
     async verifyToken() {
         try {
-            const response = await this.apiCall('/api/auth/verify', 'POST'); // Change 'GET' to 'POST'
+            const response = await this.apiCall('/api/auth/verify', 'GET');
         
             // Handle the response format
             if (response && response.success !== undefined) {
